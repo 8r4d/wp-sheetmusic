@@ -1,0 +1,61 @@
+.osm-piece {
+    margin-bottom: 30px;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: #fafafa;
+}
+
+    .osm-piece h3 {
+        margin: 0 0 6px 0;
+        font-size: 1.3em;
+        color: #0073aa;
+    }
+
+    .osm-piece p {
+        margin: 4px 0;
+    }
+
+    .osm-piece .osm-meta {
+        font-size: 0.9em;
+        color: #555;
+    }
+
+.osm-instrument-group {
+    margin-bottom: 12px;
+}
+
+.osm-file-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+    .osm-file-buttons .button {
+        flex: 0 0 auto;
+        padding: 8px 12px;
+        background: #0073aa;
+        color: #fff;
+        text-decoration: none;
+        border-radius: 4px;
+        transition: background 0.2s;
+    }
+
+        .osm-file-buttons .button:hover {
+            background: #005177;
+        }
+
+.osm-download-all {
+    margin-top: 6px;
+    display: inline-block;
+    background: #28a745;
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 4px;
+    text-decoration: none;
+}
+
+    .osm-download-all:hover {
+        background: #1c7430;
+    }
