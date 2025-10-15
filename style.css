@@ -6,45 +6,63 @@
     background: #fafafa;
 }
 
-    .osm-piece h3 {
-        margin: 0 0 6px 0;
-        font-size: 1.3em;
-        color: #0073aa;
-    }
+.osm-piece h3 {
+    margin: 0 0 6px 0;
+    font-size: 1.3em;
+}
 
-    .osm-piece p {
-        margin: 4px 0;
-    }
+.osm-piece p {
+    margin: 4px 0;
+}
 
-    .osm-piece .osm-meta {
-        font-size: 0.9em;
-        color: #555;
-    }
+.osm-piece .osm-meta {
+    font-size: 0.9em;
+    color: #555;
+}
+
+.osm-meta-updated {
+    font-size: 0.7em;
+    color: #555;
+}
+
+.osm-meta-composer {
+    font-size: 1.1em;
+    color: #555;
+    font-weight: bold;
+    margin-bottom: 1em;
+}
 
 .osm-instrument-group {
     margin-bottom: 12px;
+}
+
+.osm-filter-selectinstrument {
+    margin-bottom: 12px;
+    margin-top: 12px;
 }
 
 .osm-file-buttons {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    margin-top: 4px;
+    margin-top: 16px;
+    margin-bottom: 16px;
 }
 
-    .osm-file-buttons .button {
-        flex: 0 0 auto;
-        padding: 8px 12px;
-        background: #0073aa;
-        color: #fff;
-        text-decoration: none;
-        border-radius: 4px;
-        transition: background 0.2s;
-    }
+.osm-file-buttons .button {
+    flex: 0 0 auto;
+    padding: 8px 12px;
+    background: #FFFFFF;
+    color: #000000;
+    text-decoration: none;
+    border-radius: 4px;
+    transition: background 0.2s;
+    border: 1px solid #AAAAAA;
+}
 
-        .osm-file-buttons .button:hover {
-            background: #005177;
-        }
+.osm-file-buttons .button:hover {
+    background: #AAAAAA;
+}
 
 .osm-download-all {
     margin-top: 6px;
@@ -56,6 +74,6 @@
     text-decoration: none;
 }
 
-    .osm-download-all:hover {
-        background: #1c7430;
-    }
+.osm-download-all:hover {
+    background: #1c7430;
+}

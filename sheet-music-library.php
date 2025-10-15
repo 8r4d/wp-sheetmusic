@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Sheet Music Library
  * Description: Manage and display sheet music pieces with instrument files, composer, season, notes, and last updated info.
- * Version: 0.6
+ * Version: 0.7.1
  * Author: Brad Salomons
  * License: GPL2+
  */
@@ -18,7 +18,7 @@ function osm_register_sheet_music() {
         'name' => 'Sheet Music',
         'singular_name' => 'Sheet Music Piece',
         'add_new' => 'Add New Piece',
-        'add_new_item' => 'Add New Sheet Music Piece',
+        'add_new_item' => 'Add New Music',
         'edit_item' => 'Edit Piece',
         'new_item' => 'New Piece',
         'view_item' => 'View Piece',
@@ -165,6 +165,7 @@ function osm_render_combined_meta_box($post) {
     echo '<hr><p>Upload files and assign them to instruments.</p>';
     echo '<div id="osm-files-container">';
 
+    // Existing files
     foreach($files as $i => $f){
         $attachment_id = intval($f['attachment_id']);
         $instrument_id = intval($f['instrument']);
@@ -182,11 +183,12 @@ function osm_render_combined_meta_box($post) {
             echo '<option value="'.$t->term_id.'" '.$selected.'>'.$t->name.'</option>';
         }
         echo '</select>';
+
         echo '<button type="button" class="osm-remove-file button">Remove</button>';
         echo '</div>';
     }
 
-    // Template row for new files
+    // Template row
     echo '<div class="osm-file-row template" style="display:none;margin-bottom:8px;">';
     echo '<input type="hidden" name="osm_files[__INDEX__][attachment_id]" value="" />';
     echo '<button type="button" class="button osm-upload-button">Upload File</button>';
@@ -201,7 +203,11 @@ function osm_render_combined_meta_box($post) {
     echo '</div>';
 
     echo '</div>';
-    echo '<button type="button" id="osm-add-file" class="button">Add File</button>';
+
+    // Add buttons
+    echo '<button type="button" id="osm-add-file" class="button">Add File</button> ';
+    echo '<button type="button" id="osm-bulk-upload" class="button">Bulk Upload</button>';
+
 
     ?>
     <script>
@@ -224,15 +230,14 @@ function osm_render_combined_meta_box($post) {
             $(this).closest('.osm-file-row').remove();
         });
 
-        // Media uploader
-        var file_frame;
+        // Single file uploader
         container.on('click', '.osm-upload-button', function(e){
             e.preventDefault();
             var button = $(this);
             var hidden_input = button.siblings('input[type="hidden"]');
             var file_name_span = button.siblings('.osm-file-name');
 
-            file_frame = wp.media.frames.file_frame = wp.media({
+            var file_frame = wp.media.frames.file_frame = wp.media({
                 title: 'Select or Upload File',
                 button: { text: 'Use this file' },
                 multiple: false
@@ -250,8 +255,36 @@ function osm_render_combined_meta_box($post) {
 
             file_frame.open();
         });
+
+        // Bulk uploader
+        $('#osm-bulk-upload').click(function(e){
+            e.preventDefault();
+            var bulk_frame = wp.media.frames.bulk_frame = wp.media({
+                title: 'Select or Upload Files',
+                button: { text: 'Use These Files' },
+                multiple: true
+            });
+
+            bulk_frame.on('select', function(){
+                var selection = bulk_frame.state().get('selection');
+                selection.each(function(attachment){
+                    attachment = attachment.toJSON();
+                    var newRow = template.clone().html(function(i, oldHTML){
+                        return oldHTML.replace(/__INDEX__/g, index);
+                    });
+                    newRow.find('input[type="hidden"]').val(attachment.id);
+                    newRow.find('.osm-file-name').text(attachment.filename);
+                    container.append(newRow);
+                    index++;
+                });
+            });
+
+            bulk_frame.open();
+        });
+
     });
     </script>
+
     <?php
 }
 
@@ -330,81 +363,106 @@ function osm_shortcode($atts){
     }
 
     $query = new WP_Query($args);
-
     if(!$query->have_posts()) return '<p>No sheet music found.</p>';
 
-    // Instrument filter
-    $instruments = get_terms(['taxonomy'=>'instrument','hide_empty'=>false]);
+    // Instrument filter (hierarchical dropdown)
+    $instruments = get_terms([
+        'taxonomy'   => 'instrument',
+        'hide_empty' => false,
+        'orderby'    => 'parent',
+        'order'      => 'ASC'
+    ]);
     $output = '';
     if($instruments && !is_wp_error($instruments)){
+        // Build hierarchy tree
+        $tree = [];
+        foreach($instruments as $inst){
+            $tree[$inst->parent][] = $inst;
+        }
+
+        function osm_render_instrument_options($parent_id, $tree, $selected_id=0, $level=0){
+            $output = '';
+            if(!isset($tree[$parent_id])) return $output;
+            foreach($tree[$parent_id] as $inst){
+                $indent = str_repeat('&nbsp;&nbsp;&nbsp;', $level);
+                $selected = ($inst->term_id==$selected_id) ? 'selected' : '';
+                $output .= '<option value="'.$inst->term_id.'" '.$selected.'>'.$indent.esc_html($inst->name).'</option>';
+                $output .= osm_render_instrument_options($inst->term_id, $tree, $selected_id, $level+1);
+            }
+            return $output;
+        }
+
         $output .= '<form method="get" class="osm-filter-form">';
-        $output .= '<label for="osm_instrument_filter">Select Instrument: </label>';
+        $output .= '<div class="osm-filter-selectinstrument"><label for="osm_instrument_filter">Select Instrument: </label>';
         $output .= '<select name="osm_instrument_filter" id="osm_instrument_filter">';
         $output .= '<option value="">All Instruments</option>';
-        foreach($instruments as $inst){
-            $selected = ($selected_instrument && $selected_instrument==$inst->term_id) ? 'selected' : '';
-            $output .= '<option value="'.$inst->term_id.'" '.$selected.'>'.esc_html($inst->name).'</option>';
-        }
+        $output .= osm_render_instrument_options(0, $tree, $selected_instrument);
         $output .= '</select> ';
-        $output .= '<button type="submit" class="button">Filter</button>';
+        $output .= '<button type="submit" class="button">Filter</button></div>';
         $output .= '</form>';
     }
 
-while($query->have_posts()){ 
-    $query->the_post(); 
-    $files = get_post_meta(get_the_ID(),'osm_files',true);
-    if(!$files) continue;
-
-    $composer = get_post_meta(get_the_ID(), 'osm_composer', true);
-    $season   = get_post_meta(get_the_ID(), 'osm_season', true);
-    $notes    = get_post_meta(get_the_ID(), 'osm_notes', true);
-    $last_updated = get_post_modified_time('F j, Y', true, get_the_ID());
-
-    $output .= '<div class="osm-piece">';
-    $output .= '<h3>'.get_the_title().'</h3>';
-
-    // Metadata
-    if($composer) $output .= '<span class="osm-meta">'.esc_html($composer).'</span><br>';
-
-    // Group files by instrument
-    $files_grouped = [];
-    foreach($files as $f) $files_grouped[$f['instrument']][] = $f;
-
-    // Sort groups by instrument hierarchy
-    uasort($files_grouped, function($a, $b){
-        $order_a = intval(get_term_meta($a[0]['instrument'],'instrument_order',true));
-        $order_b = intval(get_term_meta($b[0]['instrument'],'instrument_order',true));
-        return $order_a - $order_b;
-    });
-
-    // Flatten all files into one array, keeping hierarchical order
-    $all_files_sorted = [];
-    foreach($files_grouped as $fgroup){
-        foreach($fgroup as $f){
-            $all_files_sorted[] = $f;
+    // Prepare selected instrument IDs (include children if parent)
+    $instrument_ids = [];
+    if($selected_instrument){
+        $instrument_ids[] = $selected_instrument;
+        $children = get_term_children($selected_instrument, 'instrument');
+        if($children && !is_wp_error($children)){
+            $instrument_ids = array_merge($instrument_ids, $children);
         }
     }
 
-    // Output all buttons in a single group
-    $output .= '<div class="osm-file-buttons">';
-    foreach($all_files_sorted as $f){
-        if($selected_instrument && $selected_instrument != $f['instrument']) continue;
-        $term = $f['instrument'] ? get_term($f['instrument'],'instrument') : null;
-        $title = $term ? $term->name : 'Misc';
-        $url = wp_get_attachment_url($f['attachment_id']);
-        if(!$url) continue;
-        $output .= '<a href="'.$url.'" class="button" target="_blank">'.esc_html($title).'</a> ';
+    // Loop posts
+    while($query->have_posts()){ 
+        $query->the_post(); 
+        $files = get_post_meta(get_the_ID(),'osm_files',true);
+        if(!$files) continue;
+
+        $composer = get_post_meta(get_the_ID(), 'osm_composer', true);
+        $notes    = get_post_meta(get_the_ID(), 'osm_notes', true);
+        $last_updated = get_post_modified_time('F j, Y', true, get_the_ID());
+
+        $output .= '<div class="osm-piece">';
+        $output .= '<h3>'.get_the_title().'</h3>';
+
+        if($composer) $output .= '<span class="osm-meta-composer">'.esc_html($composer).'</span><br>';
+
+        // Group files by instrument and sort by hierarchy order
+        $files_grouped = [];
+        foreach($files as $f) $files_grouped[$f['instrument']][] = $f;
+
+        uasort($files_grouped, function($a, $b){
+            $order_a = intval(get_term_meta($a[0]['instrument'],'instrument_order',true));
+            $order_b = intval(get_term_meta($b[0]['instrument'],'instrument_order',true));
+            return $order_a - $order_b;
+        });
+
+        // Flatten files in hierarchical order
+        $all_files_sorted = [];
+        foreach($files_grouped as $fgroup){
+            foreach($fgroup as $f){
+                $all_files_sorted[] = $f;
+            }
+        }
+
+        // Output all buttons in a single group (filter by selected instrument & children)
+        $output .= '<div class="osm-file-buttons">';
+        foreach($all_files_sorted as $f){
+            if($instrument_ids && !in_array($f['instrument'], $instrument_ids)) continue;
+            $term = $f['instrument'] ? get_term($f['instrument'],'instrument') : null;
+            $title = $term ? $term->name : 'Misc';
+            $url = wp_get_attachment_url($f['attachment_id']);
+            if(!$url) continue;
+            $output .= '<a href="'.$url.'" class="button" target="_blank">'.esc_html($title).'</a> ';
+        }
+        $output .= '</div>';
+
+        if($notes) $output .= '<span class="osm-meta">Notes: '.esc_html($notes).'</span><br>';
+        $output .= '<span class="osm-meta-updated">Updated: '.esc_html($last_updated).'</span><br>';
+        $output .= '</div>'; // end osm-piece
     }
-    $output .= '</div>';
-
-    // More Metadata
-    if($notes) $output .= '<span class="osm-meta">Notes: '.esc_html($notes).'</span><br>';
-    $output .= '<span class="osm-meta">Updated: '.esc_html($last_updated).'</span><br>';
-
-    $output .= '</div>'; // end osm-piece
-}
-
 
     wp_reset_postdata();
     return $output;
 }
+
