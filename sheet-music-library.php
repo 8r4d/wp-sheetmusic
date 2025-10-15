@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Sheet Music Library
  * Description: Manage and display sheet music pieces with instrument files, composer, season, notes, and last updated info.
- * Version: 0.7.1
+ * Version: 0.7.3
  * Author: Brad Salomons
  * License: GPL2+
  */
@@ -330,7 +330,6 @@ function osm_save_sheet_combined($post_id){
 add_action('wp_enqueue_scripts', function(){
     wp_enqueue_style('osm-styles', plugin_dir_url(__FILE__).'style.css');
 });
-
 /* -------------------------
  * Frontend Shortcode
  * ------------------------- */
@@ -342,8 +341,10 @@ function osm_shortcode($atts){
     ], $atts, 'sheet_music_library');
 
     $selected_instrument = isset($_GET['osm_instrument_filter']) ? intval($_GET['osm_instrument_filter']) : 0;
-    $selected_season     = intval($atts['season']);
+    //$selected_season     = isset($_GET['osm_season_filter']) ? intval($_GET['osm_season_filter']) : intval($atts['season']);
+    $selected_season = intval($atts['season']);
 
+    // --- Build query ---
     $args = [
         'post_type'      => 'sheet_music',
         'post_status'    => 'publish',
@@ -353,69 +354,84 @@ function osm_shortcode($atts){
     ];
 
     if ($selected_season) {
-        $args['tax_query'] = [
-            [
-                'taxonomy' => 'season',
-                'field'    => 'term_id',
-                'terms'    => $selected_season
-            ]
-        ];
+        $args['tax_query'] = [[
+            'taxonomy' => 'season',
+            'field'    => 'term_id',
+            'terms'    => [$selected_season],
+            'include_children' => false,
+        ]];
     }
 
     $query = new WP_Query($args);
     if(!$query->have_posts()) return '<p>No sheet music found.</p>';
 
-    // Instrument filter (hierarchical dropdown)
+    // --- Instrument filter dropdown ---
     $instruments = get_terms([
         'taxonomy'   => 'instrument',
         'hide_empty' => false,
-        'orderby'    => 'parent',
-        'order'      => 'ASC'
+        'orderby'    => 'term_order',
     ]);
     $output = '';
+
     if($instruments && !is_wp_error($instruments)){
-        // Build hierarchy tree
+        // Build hierarchy tree (parent_id => [terms])
         $tree = [];
         foreach($instruments as $inst){
-            $tree[$inst->parent][] = $inst;
+            $tree[ intval($inst->parent) ][] = $inst;
         }
 
-        function osm_render_instrument_options($parent_id, $tree, $selected_id=0, $level=0){
-            $output = '';
-            if(!isset($tree[$parent_id])) return $output;
+        // Recursive renderer (closure, no global redeclare)
+        $render_options = function($parent_id, $tree, $selected_id = 0, $level = 0) use (&$render_options){
+            $out = '';
+            if(empty($tree[$parent_id])) return $out;
+            usort($tree[$parent_id], function($a, $b){
+                $oa = intval(get_term_meta($a->term_id, 'instrument_order', true));
+                $ob = intval(get_term_meta($b->term_id, 'instrument_order', true));
+                if($oa === $ob) return strcasecmp($a->name, $b->name);
+                return $oa <=> $ob;
+            });
             foreach($tree[$parent_id] as $inst){
                 $indent = str_repeat('&nbsp;&nbsp;&nbsp;', $level);
-                $selected = ($inst->term_id==$selected_id) ? 'selected' : '';
-                $output .= '<option value="'.$inst->term_id.'" '.$selected.'>'.$indent.esc_html($inst->name).'</option>';
-                $output .= osm_render_instrument_options($inst->term_id, $tree, $selected_id, $level+1);
+                $selected = ($inst->term_id == $selected_id) ? 'selected' : '';
+                $out .= '<option value="'.intval($inst->term_id).'" '.$selected.'>'.$indent.esc_html($inst->name).'</option>';
+                $out .= $render_options($inst->term_id, $tree, $selected_id, $level + 1);
             }
-            return $output;
-        }
+            return $out;
+        };
 
         $output .= '<form method="get" class="osm-filter-form">';
-        $output .= '<div class="osm-filter-selectinstrument"><label for="osm_instrument_filter">Select Instrument: </label>';
+        $output .= '<div class="osm-filter-selectinstrument">';
+        $output .= '<label for="osm_instrument_filter">Select Instrument: </label>';
         $output .= '<select name="osm_instrument_filter" id="osm_instrument_filter">';
         $output .= '<option value="">All Instruments</option>';
-        $output .= osm_render_instrument_options(0, $tree, $selected_instrument);
+        $output .= $render_options(0, $tree, $selected_instrument);
         $output .= '</select> ';
-        $output .= '<button type="submit" class="button">Filter</button></div>';
-        $output .= '</form>';
+        $output .= '<button type="submit" class="button">Filter</button>';
+        $output .= '</div></form>';
     }
 
-    // Prepare selected instrument IDs (include children if parent)
+    // --- Determine related instruments (parents + children) ---
     $instrument_ids = [];
     if($selected_instrument){
         $instrument_ids[] = $selected_instrument;
+
+        // Include children
         $children = get_term_children($selected_instrument, 'instrument');
-        if($children && !is_wp_error($children)){
+        if($children && !is_wp_error($children))
             $instrument_ids = array_merge($instrument_ids, $children);
+
+        // Include parents (walk up hierarchy)
+        $parent_id = get_term_field('parent', $selected_instrument, 'instrument');
+        while($parent_id && !is_wp_error($parent_id)){
+            $instrument_ids[] = intval($parent_id);
+            $parent_id = get_term_field('parent', $parent_id, 'instrument');
         }
     }
 
-    // Loop posts
-    while($query->have_posts()){ 
-        $query->the_post(); 
-        $files = get_post_meta(get_the_ID(),'osm_files',true);
+    // --- Loop posts ---
+    while($query->have_posts()){
+        $query->the_post();
+        $files = get_post_meta(get_the_ID(), 'osm_files', true);
         if(!$files) continue;
 
         $composer = get_post_meta(get_the_ID(), 'osm_composer', true);
@@ -424,20 +440,18 @@ function osm_shortcode($atts){
 
         $output .= '<div class="osm-piece">';
         $output .= '<h3>'.get_the_title().'</h3>';
-
         if($composer) $output .= '<span class="osm-meta-composer">'.esc_html($composer).'</span><br>';
 
-        // Group files by instrument and sort by hierarchy order
+        // Group & sort by instrument order
         $files_grouped = [];
         foreach($files as $f) $files_grouped[$f['instrument']][] = $f;
-
         uasort($files_grouped, function($a, $b){
-            $order_a = intval(get_term_meta($a[0]['instrument'],'instrument_order',true));
-            $order_b = intval(get_term_meta($b[0]['instrument'],'instrument_order',true));
+            $order_a = intval(get_term_meta($a[0]['instrument'], 'instrument_order', true));
+            $order_b = intval(get_term_meta($b[0]['instrument'], 'instrument_order', true));
             return $order_a - $order_b;
         });
 
-        // Flatten files in hierarchical order
+        // Flatten
         $all_files_sorted = [];
         foreach($files_grouped as $fgroup){
             foreach($fgroup as $f){
@@ -445,15 +459,17 @@ function osm_shortcode($atts){
             }
         }
 
-        // Output all buttons in a single group (filter by selected instrument & children)
+        // Display all buttons together
         $output .= '<div class="osm-file-buttons">';
         foreach($all_files_sorted as $f){
+            // Skip non-matching instruments
             if($instrument_ids && !in_array($f['instrument'], $instrument_ids)) continue;
-            $term = $f['instrument'] ? get_term($f['instrument'],'instrument') : null;
+
+            $term = $f['instrument'] ? get_term($f['instrument'], 'instrument') : null;
             $title = $term ? $term->name : 'Misc';
             $url = wp_get_attachment_url($f['attachment_id']);
             if(!$url) continue;
-            $output .= '<a href="'.$url.'" class="button" target="_blank">'.esc_html($title).'</a> ';
+            $output .= '<a href="'.esc_url($url).'" class="button" target="_blank">'.esc_html($title).'</a> ';
         }
         $output .= '</div>';
 
@@ -465,4 +481,5 @@ function osm_shortcode($atts){
     wp_reset_postdata();
     return $output;
 }
+
 
