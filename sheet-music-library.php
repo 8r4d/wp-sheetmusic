@@ -381,21 +381,29 @@ function osm_shortcode($atts){
         }
 
         // Recursive renderer (closure, no global redeclare)
-        $render_options = function($parent_id, $tree, $selected_id = 0, $level = 0) use (&$render_options){
+        $render_options = function($parent_id, $tree, $selected_id = 0, $level = 0) use (&$render_options) {
             $out = '';
-            if(empty($tree[$parent_id])) return $out;
-            usort($tree[$parent_id], function($a, $b){
+            if (empty($tree[$parent_id])) return $out;
+
+            // Sort siblings by custom order meta
+            usort($tree[$parent_id], function($a, $b) {
                 $oa = intval(get_term_meta($a->term_id, 'instrument_order', true));
                 $ob = intval(get_term_meta($b->term_id, 'instrument_order', true));
-                if($oa === $ob) return strcasecmp($a->name, $b->name);
+                if ($oa === $ob) return strcasecmp($a->name, $b->name);
                 return $oa <=> $ob;
             });
-            foreach($tree[$parent_id] as $inst){
-                $indent = str_repeat('&nbsp;&nbsp;&nbsp;', $level);
+
+            foreach ($tree[$parent_id] as $inst) {
+                $prefix = ($level > 0) ? str_repeat('&mdash; ', $level) : '';
                 $selected = ($inst->term_id == $selected_id) ? 'selected' : '';
-                $out .= '<option value="'.intval($inst->term_id).'" '.$selected.'>'.$indent.esc_html($inst->name).'</option>';
-                $out .= $render_options($inst->term_id, $tree, $selected_id, $level + 1);
+                $out .= '<option value="'.intval($inst->term_id).'" '.$selected.'>'.$prefix.esc_html($inst->name).'</option>';
+
+                // Only show one generation of children (no deeper nesting)
+                if ($level < 1) {
+                    $out .= $render_options($inst->term_id, $tree, $selected_id, $level + 1);
+                }
             }
+
             return $out;
         };
 
