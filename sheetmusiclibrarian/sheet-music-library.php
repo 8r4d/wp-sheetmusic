@@ -423,11 +423,6 @@ function osm_shortcode_optimized($atts){
         ? intval($_GET['osm_instrument_filter']) 
         : intval($atts['instrument']);
 
-    // Build a transient cache key
-    $cache_key = 'osm_sheet_music_' . md5(serialize($atts) . '_' . $selected_instrument);
-    $output = get_transient($cache_key);
-    if ($output !== false) return $output;
-
     $args = [
         'post_type'      => 'sheet_music',
         'post_status'    => 'publish',
@@ -509,6 +504,12 @@ function osm_shortcode_optimized($atts){
         };
 
         // Create a nonce for this filter form
+
+        $instrument_raw = isset($_GET['osm_instrument_filter'])
+            ? intval( wp_unslash($_GET['osm_instrument_filter']) )
+            : 0;
+
+        // Create the filter form
         $filter_nonce = wp_create_nonce('osm_instrument_filter');
 
         $output .= '<form method="get" class="osm-filter-form">';
@@ -516,25 +517,22 @@ function osm_shortcode_optimized($atts){
         $output .= '<label for="osm_instrument_filter">Select Instrument: </label>';
         $output .= '<select name="osm_instrument_filter" id="osm_instrument_filter">';
         $output .= '<option value="">All Instruments</option>';
-        $output .= $render_options(0, $tree, $selected_instrument);
+        $output .= $render_options(0, $tree, $instrument_raw);
         $output .= '</select> ';
         $output .= '<input type="hidden" name="osm_instrument_filter_nonce" value="'.esc_attr($filter_nonce).'" />';
         $output .= '<button type="submit" class="button">Filter</button>';
         $output .= '</div></form>';
 
-        // Process the submitted filter safely
-        $instrument_raw = isset($_GET['osm_instrument_filter']) 
-            ? intval( wp_unslash($_GET['osm_instrument_filter']) ) 
-            : 0;
-
-        $nonce_raw = isset($_GET['osm_instrument_filter_nonce']) 
-            ? sanitize_text_field( wp_unslash($_GET['osm_instrument_filter_nonce']) ) 
+        // Verify the nonce *only if it exists* (skips strict check on first load)
+        $nonce_raw = isset($_GET['osm_instrument_filter_nonce'])
+            ? sanitize_text_field( wp_unslash($_GET['osm_instrument_filter_nonce']) )
             : '';
 
-        if ( $nonce_raw && wp_verify_nonce( $nonce_raw, 'osm_instrument_filter' ) ) {
-            $selected_instrument = intval( $instrument_raw );
+        if ( empty($nonce_raw) || wp_verify_nonce( $nonce_raw, 'osm_instrument_filter' ) ) {
+            // allow filter if nonce missing (first load) OR valid
+            $selected_instrument = $instrument_raw;
         } else {
-            $selected_instrument = 0; // invalid or missing nonce, ignore input
+            $selected_instrument = 0; // invalid nonce
         }
 
     }
@@ -611,9 +609,6 @@ function osm_shortcode_optimized($atts){
     }
 
     wp_reset_postdata();
-
-    // Cache the output for 1 hour
-    set_transient($cache_key, $output, HOUR_IN_SECONDS);
 
     return $output;
 }
