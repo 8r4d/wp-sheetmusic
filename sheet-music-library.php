@@ -1,8 +1,8 @@
 <?php
 /**
- * Plugin Name: Sheet Music Library
+ * Plugin Name: Sheet Music Librarian
  * Description: Manage and display sheet music pieces with instrument files, composer, season, notes, and last updated info.
- * Version: 0.7.3
+ * Version: 0.8.0
  * Author: Brad Salomons
  * License: GPL2+
  */
@@ -116,6 +116,35 @@ function osm_add_combined_meta_box() {
     );
 }
 
+add_action('admin_enqueue_scripts', function($hook) {
+    if (in_array($hook, ['post.php', 'post-new.php'])) {
+        $css_file = plugin_dir_path(__FILE__) . 'admin-style.css';
+        $css_url  = plugin_dir_url(__FILE__) . 'admin-style.css';
+        $version  = file_exists($css_file) ? filemtime($css_file) : false;
+
+        wp_enqueue_style('osm-admin-style', $css_url, [], $version);
+        wp_enqueue_media(); 
+    }
+});
+
+add_action('admin_head', function() {
+    global $post_type;
+    if ($post_type === 'sheet_music') {
+        echo '<script>
+            jQuery(function($){
+                $("#instrumentdiv").removeClass("closed").addClass("closed");
+            });
+        </script>';
+    }
+});
+
+add_action('admin_enqueue_scripts', function($hook) {
+    if (in_array($hook, ['post.php', 'post-new.php'])) {
+        wp_enqueue_media();
+        wp_enqueue_script('jquery');
+    }
+});
+
 add_action('instrument_edit_form_fields', 'osm_instrument_order_field');
 function osm_instrument_order_field($term){
     $order = get_term_meta($term->term_id, 'instrument_order', true);
@@ -150,7 +179,7 @@ function osm_render_combined_meta_box($post) {
     $files = get_post_meta($post->ID, 'osm_files', true);
     if(!is_array($files)) $files = [];
 
-    echo '<hr><p>Upload files and assign them to instruments.</p>';
+    echo '<hr><h4>Upload files and assign them to instruments.</h4>';
     echo '<div id="osm-files-container">';
 
     foreach($files as $i => $f){
@@ -158,40 +187,66 @@ function osm_render_combined_meta_box($post) {
         $instrument_id = intval($f['instrument']);
         $attachment_url = $attachment_id ? wp_get_attachment_url($attachment_id) : '';
 
-        echo '<div class="osm-file-row" style="margin-bottom:8px;">';
-        echo '<input type="hidden" name="osm_files['.$i.'][attachment_id]" value="'.esc_attr($attachment_id).'" />';
-        echo '<button type="button" class="button osm-upload-button">'.($attachment_url ? 'Change File' : 'Upload File').'</button>';
-        if($attachment_url) echo ' <span class="osm-file-name">'.esc_html(basename($attachment_url)).'</span>';
-
-        echo '<select name="osm_files['.$i.'][instrument]">';
-        echo '<option value="">Select Instrument</option>';
+        echo '<div class="osm-file-row">';
+        echo '  <input type="hidden" name="osm_files['.$i.'][attachment_id]" value="'.esc_attr($attachment_id).'" />';
+        echo '  <div class="osm-file-inner">';
+        echo '      <button type="button" class="button osm-upload-button">'.($attachment_url ? 'Change File' : 'Upload File').'</button>';
+        echo '      <span class="osm-file-name" style="flex:1; margin-left:8px; color:#555;">'.($attachment_url ? esc_html(basename($attachment_url)) : '').'</span>';
+        echo '      <select name="osm_files['.$i.'][instrument]" style="min-width:180px; margin-left:8px;">';
+        echo '          <option value="">Select Instrument</option>';
         foreach(get_terms(['taxonomy'=>'instrument','hide_empty'=>false]) as $t){
             $selected = $t->term_id==$instrument_id ? 'selected' : '';
             echo '<option value="'.$t->term_id.'" '.$selected.'>'.$t->name.'</option>';
         }
-        echo '</select>';
-
-        echo '<button type="button" class="osm-remove-file button">Remove</button>';
+        echo '      </select>';
+        echo '      <button type="button" class="osm-remove-file button" style="margin-left:8px;">Remove</button>';
+        echo '  </div>';
         echo '</div>';
+
     }
 
-    echo '<div class="osm-file-row template" style="display:none;margin-bottom:8px;">';
-    echo '<input type="hidden" name="osm_files[__INDEX__][attachment_id]" value="" />';
-    echo '<button type="button" class="button osm-upload-button">Upload File</button>';
-    echo '<span class="osm-file-name"></span>';
-    echo '<select name="osm_files[__INDEX__][instrument]">';
-    echo '<option value="">Select Instrument</option>';
-    foreach(get_terms(['taxonomy'=>'instrument','hide_empty'=>false]) as $t){
-        echo '<option value="'.$t->term_id.'">'.$t->name.'</option>';
+    echo '<div class="osm-file-row template" style="display:none;">';
+    echo '  <input type="hidden" name="osm_files[__INDEX__][attachment_id]" value="" />';
+    echo '  <div class="osm-file-inner">';
+    echo '      <button type="button" class="button osm-upload-button">Upload File</button>';
+    echo '      <span class="osm-file-name" style="flex:1; margin-left:8px; color:#555;"></span>';
+    echo '      <select name="osm_files[__INDEX__][instrument]" style="min-width:180px; margin-left:8px;">';
+    echo '          <option value="">Select Instrument</option>';
+    foreach (get_terms(['taxonomy' => 'instrument', 'hide_empty' => false]) as $t) {
+        echo '<option value="' . $t->term_id . '">' . esc_html($t->name) . '</option>';
     }
-    echo '</select>';
-    echo '<button type="button" class="osm-remove-file button">Remove</button>';
+    echo '      </select>';
+    echo '      <button type="button" class="osm-remove-file button" style="margin-left:8px;">Remove</button>';
+    echo '  </div>';
     echo '</div>';
 
     echo '</div>';
 
-    echo '<button type="button" id="osm-add-file" class="button">Add File</button> ';
-    echo '<button type="button" id="osm-bulk-upload" class="button">Bulk Upload</button>';
+    echo '<div style="padding-top:8px;"><button type="button" id="osm-add-file" class="button">Add File</button> ';
+    echo '<button type="button" id="osm-bulk-upload" class="button">Bulk Upload</button></div>';
+
+    // SHORTCODE HINTS
+    $seasons = get_the_terms($post->ID, 'season');
+
+    echo '<div class="osm-shortcode-box">';
+    echo '<strong>Embed this piece on the front end:</strong>';
+    echo '<p>You can embed this sheet music using one of the following shortcodes:</p>';
+
+    echo '<code>[sheet_music_library]</code>';
+    echo '<br><small>This version lists all published pieces.</small>';
+    echo '<br><br>';
+
+    if (!empty($seasons) && !is_wp_error($seasons)) {
+        echo '<p><strong>Season-specific shortcodes:</strong></p>';
+        foreach ($seasons as $season) {
+            echo '<code>[sheet_music_library season="' . esc_attr($season->term_id) . '"]</code>';
+            echo '<br><small>Displays only pieces from the <em>' . esc_html($season->name) . '</em> season (ID: ' . esc_html($season->term_id) . ').</small><br><br>';
+        }
+    } else {
+        echo '<p><em>No seasons are currently associated with this piece.</em></p>';
+    }
+
+    echo '</div>';
 
 
     ?>
@@ -219,10 +274,11 @@ function osm_render_combined_meta_box($post) {
         container.on('click', '.osm-upload-button', function(e){
             e.preventDefault();
             var button = $(this);
-            var hidden_input = button.siblings('input[type="hidden"]');
-            var file_name_span = button.siblings('.osm-file-name');
+            var row = button.closest('.osm-file-row');
+            var hidden_input = row.find('input[type="hidden"]');
+            var file_name_span = row.find('.osm-file-name');
 
-            var file_frame = wp.media.frames.file_frame = wp.media({
+            var file_frame = wp.media({
                 title: 'Select or Upload File',
                 button: { text: 'Use this file' },
                 multiple: false
@@ -231,11 +287,7 @@ function osm_render_combined_meta_box($post) {
             file_frame.on('select', function(){
                 var attachment = file_frame.state().get('selection').first().toJSON();
                 hidden_input.val(attachment.id);
-                if(file_name_span.length){
-                    file_name_span.text(attachment.filename);
-                } else {
-                    button.after(' <span class="osm-file-name">'+attachment.filename+'</span>');
-                }
+                file_name_span.text(attachment.filename);
             });
 
             file_frame.open();
@@ -311,7 +363,11 @@ function osm_save_sheet_combined($post_id){
 //////////////////////////////
 
 add_action('wp_enqueue_scripts', function(){
-    wp_enqueue_style('osm-styles', plugin_dir_url(__FILE__).'style.css');
+    $css_file = plugin_dir_path(__FILE__) . 'style.css';
+    $css_url  = plugin_dir_url(__FILE__) . 'style.css';
+    $version  = file_exists($css_file) ? filemtime($css_file) : false;
+
+    wp_enqueue_style('osm-styles', $css_url, [], $version);
 });
 
 // ADD SHORTCODE [sheet_music_library season="ID"]
