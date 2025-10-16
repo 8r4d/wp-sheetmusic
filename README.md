@@ -2,14 +2,18 @@
 A sheet music manager for the orchestra website
 
 
+To show all seasons: 
 
-To show all seasons: [sheet_music_library]
+[sheet_music_library]
 
-To show only 2025/26 Season (replace 123 with the term ID of that season):
+To show only limited selections:
 
-[sheet_music_library season="123"]
+All music from a single season:
+
+[sheet_music_library season="christmas"]
+
+Single piece:
+
+[sheet_music_library id="3108"]
 
 
-You can also combine it with instrument filtering via URL like before:
-
-/music-page?osm_instrument_filter=5
