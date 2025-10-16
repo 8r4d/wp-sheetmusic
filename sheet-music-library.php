@@ -7,11 +7,14 @@
  * License: GPL2+
  */
 
+//////////////////////////////
+// WORDPRESS REGISTRATIONS
+//////////////////////////////
+
 if (!defined('ABSPATH')) exit;
 
-/* -------------------------
- * Register Sheet Music Post Type
- * ------------------------- */
+// Register Sheet Music Post Type
+
 add_action('init', 'osm_register_sheet_music');
 function osm_register_sheet_music() {
     $labels = [
@@ -41,9 +44,8 @@ function osm_register_sheet_music() {
     register_post_type('sheet_music', $args);
 }
 
-/* -------------------------
- * Instrument Taxonomy
- * ------------------------- */
+// Register Instrument Taxonomy
+
 add_action('init', 'osm_register_instrument_taxonomy');
 function osm_register_instrument_taxonomy() {
     $labels = [
@@ -70,10 +72,8 @@ function osm_register_instrument_taxonomy() {
     register_taxonomy('instrument', ['sheet_music'], $args);
 }
 
+// Register Season Taxonomy
 
-/* -------------------------
- * Season Taxonomy
- * ------------------------- */
 add_action('init', 'osm_register_season_taxonomy');
 function osm_register_season_taxonomy() {
     $labels = [
@@ -89,7 +89,7 @@ function osm_register_season_taxonomy() {
     ];
 
     $args = [
-        'hierarchical' => true, // like categories
+        'hierarchical' => true, 
         'labels' => $labels,
         'show_ui' => true,
         'show_admin_column' => true,
@@ -100,7 +100,9 @@ function osm_register_season_taxonomy() {
     register_taxonomy('season', ['sheet_music'], $args);
 }
 
-
+//////////////////////////////
+// EDITOR
+//////////////////////////////
 
 add_action('add_meta_boxes', 'osm_add_combined_meta_box');
 function osm_add_combined_meta_box() {
@@ -138,7 +140,6 @@ function osm_save_instrument_order($term_id){
 function osm_render_combined_meta_box($post) {
     wp_nonce_field('osm_save_sheet_combined', 'osm_sheet_combined_nonce');
 
-    // --- Metadata ---
     $composer = get_post_meta($post->ID, 'osm_composer', true);
     $season   = get_post_meta($post->ID, 'osm_season', true);
     $notes    = get_post_meta($post->ID, 'osm_notes', true);
@@ -146,26 +147,12 @@ function osm_render_combined_meta_box($post) {
     echo '<p><label>Composer: <input type="text" name="osm_composer" value="'.esc_attr($composer).'" style="width:100%;" /></label></p>';
     echo '<p><label>Notes:<br><textarea name="osm_notes" rows="4" style="width:100%;">'.esc_textarea($notes).'</textarea></label></p>';
 
-    // Seasons dropdown
-    //$selected_seasons = wp_get_post_terms($post->ID, 'season', ['fields' => 'ids']);
-    //$all_seasons = get_terms(['taxonomy' => 'season','hide_empty' => false]);
-    //echo '<p><label>Season: ';
-    //echo '<select name="osm_season[]" multiple style="width:100%;">';
-    //foreach($all_seasons as $season){
-    //    $selected = in_array($season->term_id, $selected_seasons) ? 'selected' : '';
-    //    echo '<option value="'.$season->term_id.'" '.$selected.'>'.$season->name.'</option>';
-    //}
-    //echo '</select>';
-    //echo '</label></p>';
-
-    // --- Files ---
     $files = get_post_meta($post->ID, 'osm_files', true);
     if(!is_array($files)) $files = [];
 
     echo '<hr><p>Upload files and assign them to instruments.</p>';
     echo '<div id="osm-files-container">';
 
-    // Existing files
     foreach($files as $i => $f){
         $attachment_id = intval($f['attachment_id']);
         $instrument_id = intval($f['instrument']);
@@ -188,7 +175,6 @@ function osm_render_combined_meta_box($post) {
         echo '</div>';
     }
 
-    // Template row
     echo '<div class="osm-file-row template" style="display:none;margin-bottom:8px;">';
     echo '<input type="hidden" name="osm_files[__INDEX__][attachment_id]" value="" />';
     echo '<button type="button" class="button osm-upload-button">Upload File</button>';
@@ -204,7 +190,6 @@ function osm_render_combined_meta_box($post) {
 
     echo '</div>';
 
-    // Add buttons
     echo '<button type="button" id="osm-add-file" class="button">Add File</button> ';
     echo '<button type="button" id="osm-bulk-upload" class="button">Bulk Upload</button>';
 
@@ -256,7 +241,7 @@ function osm_render_combined_meta_box($post) {
             file_frame.open();
         });
 
-        // Bulk uploader
+        // Bulk files uploader
         $('#osm-bulk-upload').click(function(e){
             e.preventDefault();
             var bulk_frame = wp.media.frames.bulk_frame = wp.media({
@@ -294,9 +279,8 @@ function osm_save_sheet_combined($post_id){
     if(defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
     if(!current_user_can('edit_post', $post_id)) return;
 
-    // Metadata
+    // Save Music Record Metadata
     update_post_meta($post_id, 'osm_composer', sanitize_text_field($_POST['osm_composer'] ?? ''));
-    //update_post_meta($post_id, 'osm_season', sanitize_text_field($_POST['osm_season'] ?? ''));
     update_post_meta($post_id, 'osm_notes', sanitize_textarea_field($_POST['osm_notes'] ?? ''));
 
     if(isset($_POST['osm_season']) && is_array($_POST['osm_season'])){
@@ -304,7 +288,7 @@ function osm_save_sheet_combined($post_id){
     wp_set_post_terms($post_id, $season_ids, 'season');
 }
 
-    // Files
+    // Handle Files
     if(isset($_POST['osm_files']) && is_array($_POST['osm_files'])){
         $clean_files = [];
         foreach($_POST['osm_files'] as $f){
@@ -322,29 +306,26 @@ function osm_save_sheet_combined($post_id){
     }
 }
 
+//////////////////////////////
+// FRONT END
+//////////////////////////////
 
-
-/* -------------------------
- * Enqueue Frontend Styles
- * ------------------------- */
 add_action('wp_enqueue_scripts', function(){
     wp_enqueue_style('osm-styles', plugin_dir_url(__FILE__).'style.css');
 });
-/* -------------------------
- * Frontend Shortcode
- * ------------------------- */
+
+// ADD SHORTCODE [sheet_music_library season="ID"]
+
 add_shortcode('sheet_music_library','osm_shortcode');
 function osm_shortcode($atts){
     $atts = shortcode_atts([
         'instrument' => 0,
-        'season'     => 0 // allow filtering by season term ID
+        'season'     => 0 // allow filtering by season term ID but NOT shortname
     ], $atts, 'sheet_music_library');
 
     $selected_instrument = isset($_GET['osm_instrument_filter']) ? intval($_GET['osm_instrument_filter']) : 0;
-    //$selected_season     = isset($_GET['osm_season_filter']) ? intval($_GET['osm_season_filter']) : intval($atts['season']);
     $selected_season = intval($atts['season']);
 
-    // --- Build query ---
     $args = [
         'post_type'      => 'sheet_music',
         'post_status'    => 'publish',
@@ -365,7 +346,7 @@ function osm_shortcode($atts){
     $query = new WP_Query($args);
     if(!$query->have_posts()) return '<p>No sheet music found.</p>';
 
-    // --- Instrument filter dropdown ---
+    // FILTER BY INSTRUMENT
     $instruments = get_terms([
         'taxonomy'   => 'instrument',
         'hide_empty' => false,
@@ -374,18 +355,15 @@ function osm_shortcode($atts){
     $output = '';
 
     if($instruments && !is_wp_error($instruments)){
-        // Build hierarchy tree (parent_id => [terms])
         $tree = [];
         foreach($instruments as $inst){
             $tree[ intval($inst->parent) ][] = $inst;
         }
 
-        // Recursive renderer (closure, no global redeclare)
         $render_options = function($parent_id, $tree, $selected_id = 0, $level = 0) use (&$render_options) {
             $out = '';
             if (empty($tree[$parent_id])) return $out;
 
-            // Sort siblings by custom order meta
             usort($tree[$parent_id], function($a, $b) {
                 $oa = intval(get_term_meta($a->term_id, 'instrument_order', true));
                 $ob = intval(get_term_meta($b->term_id, 'instrument_order', true));
@@ -398,7 +376,8 @@ function osm_shortcode($atts){
                 $selected = ($inst->term_id == $selected_id) ? 'selected' : '';
                 $out .= '<option value="'.intval($inst->term_id).'" '.$selected.'>'.$prefix.esc_html($inst->name).'</option>';
 
-                // Only show one generation of children (no deeper nesting)
+                // CONTROL GENERATIONS OF INSTRUMENTS SHOWN IN PULLDOWN
+                // HIERARCHY OF SEARCH IS RESPECTED FOR SUB-CATEGORIES BUT NOT DISPLAYED IN UI
                 if ($level < 1) {
                     $out .= $render_options($inst->term_id, $tree, $selected_id, $level + 1);
                 }
@@ -418,17 +397,14 @@ function osm_shortcode($atts){
         $output .= '</div></form>';
     }
 
-    // --- Determine related instruments (parents + children) ---
     $instrument_ids = [];
     if($selected_instrument){
         $instrument_ids[] = $selected_instrument;
 
-        // Include children
         $children = get_term_children($selected_instrument, 'instrument');
         if($children && !is_wp_error($children))
             $instrument_ids = array_merge($instrument_ids, $children);
 
-        // Include parents (walk up hierarchy)
         $parent_id = get_term_field('parent', $selected_instrument, 'instrument');
         while($parent_id && !is_wp_error($parent_id)){
             $instrument_ids[] = intval($parent_id);
@@ -436,7 +412,7 @@ function osm_shortcode($atts){
         }
     }
 
-    // --- Loop posts ---
+    // SHEET MUSIC RECORDS LOOP
     while($query->have_posts()){
         $query->the_post();
         $files = get_post_meta(get_the_ID(), 'osm_files', true);
@@ -470,6 +446,7 @@ function osm_shortcode($atts){
         // Display all buttons together
         $output .= '<div class="osm-file-buttons">';
         foreach($all_files_sorted as $f){
+
             // Skip non-matching instruments
             if($instrument_ids && !in_array($f['instrument'], $instrument_ids)) continue;
 
@@ -483,11 +460,9 @@ function osm_shortcode($atts){
 
         if($notes) $output .= '<span class="osm-meta">Notes: '.esc_html($notes).'</span><br>';
         $output .= '<span class="osm-meta-updated">Updated: '.esc_html($last_updated).'</span><br>';
-        $output .= '</div>'; // end osm-piece
+        $output .= '</div>';
     }
 
     wp_reset_postdata();
     return $output;
 }
-
-
