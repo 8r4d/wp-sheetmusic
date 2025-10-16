@@ -8,11 +8,15 @@ Stable tag: 1.0.0
 License: GNU General Public License v2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
-Simplifies creation of content types and taxonomies to create and organize sheet music libraries. Intended for use by orchestras or bands that use their website to provide access to PDF music for member musicians.
+Simplifies creation of content types and taxonomies to create and organize sheet music libraries to provide access to members.
 
 == Description ==
 
-A sheet music manager for the orchestra website. As the volunteer in charge of managing our online member music library where musicians can download their sheet music, it's a chore keeping things organized all season. I built this plugin to simplify the task. 
+A sheet music manager for the orchestra website. 
+
+Note: This plugin does not provide security or block access. Please use a WordPress page or plugin that controls viewing of a page or post in conjunction with this plugin.
+
+As the volunteer in charge of managing our online member music library where musicians can download their sheet music, it's a chore keeping things organized all season. I built this plugin to simplify the task. 
 
 It simplifies managing files on the back end and creates interactive filters on the front.
 

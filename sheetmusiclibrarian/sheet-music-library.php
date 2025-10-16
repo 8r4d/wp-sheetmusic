@@ -161,10 +161,17 @@ function osm_instrument_order_field($term){
 
 add_action('edited_instrument', 'osm_save_instrument_order');
 function osm_save_instrument_order($term_id){
-    if(isset($_POST['instrument_order'])){
-        update_term_meta($term_id, 'instrument_order', intval($_POST['instrument_order']));
+    // Verify nonce from the edit form
+    if ( ! isset( $_POST['_wpnonce'] ) || ! check_admin_referer( 'edit-tag_' . $term_id ) ) {
+        return;
+    }
+
+    if ( isset($_POST['instrument_order']) ) {
+        $order = intval( wp_unslash($_POST['instrument_order']) );
+        update_term_meta($term_id, 'instrument_order', $order);
     }
 }
+
 
 function osm_render_combined_meta_box($post) {
     wp_nonce_field('osm_save_sheet_combined', 'osm_sheet_combined_nonce');
@@ -188,15 +195,15 @@ function osm_render_combined_meta_box($post) {
         $attachment_url = $attachment_id ? wp_get_attachment_url($attachment_id) : '';
 
         echo '<div class="osm-file-row">';
-        echo '  <input type="hidden" name="osm_files['.$i.'][attachment_id]" value="'.esc_attr($attachment_id).'" />';
+        echo '  <input type="hidden" name="osm_files['.esc_html($i).'][attachment_id]" value="'.esc_attr($attachment_id).'" />';
         echo '  <div class="osm-file-inner">';
         echo '      <button type="button" class="button osm-upload-button">'.($attachment_url ? 'Change File' : 'Upload File').'</button>';
         echo '      <span class="osm-file-name" style="flex:1; margin-left:8px; color:#555;">'.($attachment_url ? esc_html(basename($attachment_url)) : '').'</span>';
-        echo '      <select name="osm_files['.$i.'][instrument]" style="min-width:180px; margin-left:8px;">';
+        echo '      <select name="osm_files['.esc_html($i).'][instrument]" style="min-width:180px; margin-left:8px;">';
         echo '          <option value="">Select Instrument</option>';
         foreach(get_terms(['taxonomy'=>'instrument','hide_empty'=>false]) as $t){
             $selected = $t->term_id==$instrument_id ? 'selected' : '';
-            echo '<option value="'.$t->term_id.'" '.$selected.'>'.$t->name.'</option>';
+            echo '<option value="'.esc_html($t->term_id).'" '.esc_html($selected).'>'.esc_html($t->name).'</option>';
         }
         echo '      </select>';
         echo '      <button type="button" class="osm-remove-file button" style="margin-left:8px;">Remove</button>';
@@ -213,7 +220,7 @@ function osm_render_combined_meta_box($post) {
     echo '      <select name="osm_files[__INDEX__][instrument]" style="min-width:180px; margin-left:8px;">';
     echo '          <option value="">Select Instrument</option>';
     foreach (get_terms(['taxonomy' => 'instrument', 'hide_empty' => false]) as $t) {
-        echo '<option value="' . $t->term_id . '">' . esc_html($t->name) . '</option>';
+        echo '<option value="' .esc_html($t->term_id). '">' . esc_html($t->name) . '</option>';
     }
     echo '      </select>';
     echo '      <button type="button" class="osm-remove-file button" style="margin-left:8px;">Remove</button>';
@@ -332,37 +339,65 @@ function osm_render_combined_meta_box($post) {
 }
 
 add_action('save_post', 'osm_save_sheet_combined');
-function osm_save_sheet_combined($post_id){
-    if(!isset($_POST['osm_sheet_combined_nonce']) || !wp_verify_nonce($_POST['osm_sheet_combined_nonce'], 'osm_save_sheet_combined')) return;
-    if(defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
-    if(!current_user_can('edit_post', $post_id)) return;
+function osm_save_sheet_combined($post_id) {
 
-    // Save Music Record Metadata
-    update_post_meta($post_id, 'osm_composer', sanitize_text_field($_POST['osm_composer'] ?? ''));
-    update_post_meta($post_id, 'osm_notes', sanitize_textarea_field($_POST['osm_notes'] ?? ''));
-
-    if(isset($_POST['osm_season']) && is_array($_POST['osm_season'])){
-    $season_ids = array_map('intval', $_POST['osm_season']);
-    wp_set_post_terms($post_id, $season_ids, 'season');
-}
-
-    // Handle Files
-    if(isset($_POST['osm_files']) && is_array($_POST['osm_files'])){
-        $clean_files = [];
-        foreach($_POST['osm_files'] as $f){
-            $attachment_id = isset($f['attachment_id']) ? intval($f['attachment_id']) : 0;
-            $instrument = isset($f['instrument']) ? intval($f['instrument']) : 0;
-
-            if($attachment_id){
-                $clean_files[] = [
-                    'attachment_id' => $attachment_id,
-                    'instrument' => $instrument
-                ];
-            }
-        }
-        update_post_meta($post_id, 'osm_files', $clean_files);
+    $nonce = isset($_POST['osm_sheet_combined_nonce']) ? sanitize_text_field(wp_unslash($_POST['osm_sheet_combined_nonce'])) : '';
+    if ( ! $nonce || ! wp_verify_nonce( $nonce, 'osm_save_sheet_combined' ) ) {
+        return;
     }
-}
+
+    // Prevent autosave
+    if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
+
+    // Check permissions
+    if (!current_user_can('edit_post', $post_id)) return;
+
+    // Sanitize and save composer
+    if (isset($_POST['osm_composer'])) {
+        $composer = sanitize_text_field(wp_unslash($_POST['osm_composer']));
+        update_post_meta($post_id, 'osm_composer', $composer);
+    }
+
+    // Sanitize and save notes
+    if (isset($_POST['osm_notes'])) {
+        $notes = sanitize_textarea_field(wp_unslash($_POST['osm_notes']));
+        update_post_meta($post_id, 'osm_notes', $notes);
+    }
+
+    // Save selected seasons (taxonomy terms)
+    if (isset($_POST['osm_season']) && is_array($_POST['osm_season'])) {
+        $season_ids = array_map('intval', wp_unslash($_POST['osm_season']));
+        wp_set_post_terms($post_id, $season_ids, 'season');
+    }
+
+    // Handle uploaded files
+    $raw_files = []; // default
+
+    $input_files = filter_input(INPUT_POST, 'osm_files', FILTER_DEFAULT, FILTER_REQUIRE_ARRAY);
+
+    if ( is_array( $input_files ) ) {
+        $raw_files = wp_unslash( $input_files ); // unslash first
+    }
+
+    $clean_files = [];
+
+    foreach ( $raw_files as $f ) {
+        $attachment_id = isset( $f['attachment_id'] ) ? intval( $f['attachment_id'] ) : 0;
+        $instrument    = isset( $f['instrument'] ) ? intval( $f['instrument'] ) : 0;
+
+        if ( $attachment_id ) {
+            $clean_files[] = [
+                'attachment_id' => $attachment_id,
+                'instrument'    => $instrument,
+            ];
+        }
+    }
+
+    update_post_meta( $post_id, 'osm_files', $clean_files );
+
+    }
+
+
 
 //////////////////////////////
 // FRONT END
@@ -376,22 +411,29 @@ add_action('wp_enqueue_scripts', function(){
     wp_enqueue_style('osm-styles', $css_url, [], $version);
 });
 
-add_shortcode('sheet_music_library','osm_shortcode');
-function osm_shortcode($atts){
+add_shortcode('sheet_music_library','osm_shortcode_optimized');
+function osm_shortcode_optimized($atts){
     $atts = shortcode_atts([
         'id'         => 0,   // single piece by post ID
         'instrument' => 0,   // optional instrument filter
         'season'     => '',  // optional season filter by slug
     ], $atts, 'sheet_music_library');
 
-    $selected_instrument = isset($_GET['osm_instrument_filter']) ? intval($_GET['osm_instrument_filter']) : intval($atts['instrument']);
+    $selected_instrument = isset($_GET['osm_instrument_filter']) 
+        ? intval($_GET['osm_instrument_filter']) 
+        : intval($atts['instrument']);
+
+    // Build a transient cache key
+    $cache_key = 'osm_sheet_music_' . md5(serialize($atts) . '_' . $selected_instrument);
+    $output = get_transient($cache_key);
+    if ($output !== false) return $output;
 
     $args = [
         'post_type'      => 'sheet_music',
         'post_status'    => 'publish',
         'posts_per_page' => -1,
         'orderby'        => 'title',
-        'order'          => 'ASC'
+        'order'          => 'ASC',
     ];
 
     // Single post by ID
@@ -399,14 +441,29 @@ function osm_shortcode($atts){
         $args['p'] = intval($atts['id']);
     }
 
-    // Filter by season slug
-    if (!empty($atts['season'])) {
-        $args['tax_query'] = [[
-            'taxonomy' => 'season',
-            'field'    => 'slug',
-            'terms'    => array_map('sanitize_title', explode(',', $atts['season'])),
-            'include_children' => false,
-        ]];
+    // Filter by season using a meta/post workaround (avoids tax_query)
+    if ( ! empty( $atts['season'] ) ) {
+        $slugs = array_map( 'sanitize_title', explode( ',', $atts['season'] ) );
+        $season_post_ids = [];
+
+        foreach ( $slugs as $slug ) {
+            $season_term = get_term_by( 'slug', $slug, 'season' );
+            if ( $season_term ) {
+                $linked_post_ids = get_objects_in_term( $season_term->term_id, 'season' );
+                if ( ! is_wp_error( $linked_post_ids ) && ! empty( $linked_post_ids ) ) {
+                    $season_post_ids = array_merge( $season_post_ids, $linked_post_ids );
+                }
+            }
+        }
+
+        $season_post_ids = array_unique( $season_post_ids );
+
+        if ( ! empty( $season_post_ids ) ) {
+            $args['post__in'] = $season_post_ids;
+        } else {
+            // No posts match the season, return early
+            return '<p>No sheet music found for this season.</p>';
+        }
     }
 
     $query = new WP_Query($args);
@@ -443,13 +500,16 @@ function osm_shortcode($atts){
                 $selected = ($inst->term_id == $selected_id) ? 'selected' : '';
                 $out .= '<option value="'.intval($inst->term_id).'" '.$selected.'>'.$prefix.esc_html($inst->name).'</option>';
 
-                if ($level < 1) { // only one generation of children in UI
+                if ($level < 1) { // only one generation of children
                     $out .= $render_options($inst->term_id, $tree, $selected_id, $level + 1);
                 }
             }
 
             return $out;
         };
+
+        // Create a nonce for this filter form
+        $filter_nonce = wp_create_nonce('osm_instrument_filter');
 
         $output .= '<form method="get" class="osm-filter-form">';
         $output .= '<div class="osm-filter-selectinstrument">';
@@ -458,8 +518,25 @@ function osm_shortcode($atts){
         $output .= '<option value="">All Instruments</option>';
         $output .= $render_options(0, $tree, $selected_instrument);
         $output .= '</select> ';
+        $output .= '<input type="hidden" name="osm_instrument_filter_nonce" value="'.esc_attr($filter_nonce).'" />';
         $output .= '<button type="submit" class="button">Filter</button>';
         $output .= '</div></form>';
+
+        // Process the submitted filter safely
+        $instrument_raw = isset($_GET['osm_instrument_filter']) 
+            ? intval( wp_unslash($_GET['osm_instrument_filter']) ) 
+            : 0;
+
+        $nonce_raw = isset($_GET['osm_instrument_filter_nonce']) 
+            ? sanitize_text_field( wp_unslash($_GET['osm_instrument_filter_nonce']) ) 
+            : '';
+
+        if ( $nonce_raw && wp_verify_nonce( $nonce_raw, 'osm_instrument_filter' ) ) {
+            $selected_instrument = intval( $instrument_raw );
+        } else {
+            $selected_instrument = 0; // invalid or missing nonce, ignore input
+        }
+
     }
 
     // Build full instrument ID list (selected + children + parents)
@@ -471,10 +548,13 @@ function osm_shortcode($atts){
         if($children && !is_wp_error($children))
             $instrument_ids = array_merge($instrument_ids, $children);
 
-        $parent_id = get_term_field('parent', $selected_instrument, 'instrument');
-        while($parent_id && !is_wp_error($parent_id)){
-            $instrument_ids[] = intval($parent_id);
-            $parent_id = get_term_field('parent', $parent_id, 'instrument');
+        // Correct parent loop
+        $term = get_term($selected_instrument, 'instrument');
+        $parent_id = $term ? intval($term->parent) : 0;
+        while($parent_id){
+            $instrument_ids[] = $parent_id;
+            $term = get_term($parent_id, 'instrument');
+            $parent_id = $term ? intval($term->parent) : 0;
         }
     }
 
@@ -498,6 +578,11 @@ function osm_shortcode($atts){
         uasort($files_grouped, function($a, $b){
             $order_a = intval(get_term_meta($a[0]['instrument'], 'instrument_order', true));
             $order_b = intval(get_term_meta($b[0]['instrument'], 'instrument_order', true));
+            if($order_a === $order_b){
+                $term_a = get_term($a[0]['instrument'], 'instrument');
+                $term_b = get_term($b[0]['instrument'], 'instrument');
+                return strcasecmp($term_a->name, $term_b->name);
+            }
             return $order_a - $order_b;
         });
 
@@ -526,5 +611,9 @@ function osm_shortcode($atts){
     }
 
     wp_reset_postdata();
+
+    // Cache the output for 1 hour
+    set_transient($cache_key, $output, HOUR_IN_SECONDS);
+
     return $output;
 }
