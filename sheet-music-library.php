@@ -232,22 +232,28 @@ function osm_render_combined_meta_box($post) {
     echo '<strong>Embed this piece on the front end:</strong>';
     echo '<p>You can embed this sheet music using one of the following shortcodes:</p>';
 
+    // All pieces
     echo '<code>[sheet_music_library]</code>';
     echo '<br><small>This version lists all published pieces.</small>';
     echo '<br><br>';
 
+    // Season-specific shortcodes
     if (!empty($seasons) && !is_wp_error($seasons)) {
         echo '<p><strong>Season-specific shortcodes:</strong></p>';
         foreach ($seasons as $season) {
-            echo '<code>[sheet_music_library season="' . esc_attr($season->term_id) . '"]</code>';
-            echo '<br><small>Displays only pieces from the <em>' . esc_html($season->name) . '</em> season (ID: ' . esc_html($season->term_id) . ').</small><br><br>';
+            echo '<code>[sheet_music_library season="' . esc_attr($season->slug) . '"]</code>';
+            echo '<br><small>Displays only pieces from the <em>' . esc_html($season->name) . '</em> season.</small><br><br>';
         }
     } else {
         echo '<p><em>No seasons are currently associated with this piece.</em></p>';
     }
 
-    echo '</div>';
+    // Single piece shortcode
+    echo '<p><strong>Single piece shortcode:</strong></p>';
+    echo '<code>[sheet_music_library id="' . esc_attr($post->ID) . '"]</code>';
+    echo '<br><small>Displays this single piece only.</small>';
 
+    echo '</div>';
 
     ?>
     <script>
@@ -370,17 +376,15 @@ add_action('wp_enqueue_scripts', function(){
     wp_enqueue_style('osm-styles', $css_url, [], $version);
 });
 
-// ADD SHORTCODE [sheet_music_library season="ID"]
-
 add_shortcode('sheet_music_library','osm_shortcode');
 function osm_shortcode($atts){
     $atts = shortcode_atts([
-        'instrument' => 0,
-        'season'     => 0 // allow filtering by season term ID but NOT shortname
+        'id'         => 0,   // single piece by post ID
+        'instrument' => 0,   // optional instrument filter
+        'season'     => '',  // optional season filter by slug
     ], $atts, 'sheet_music_library');
 
-    $selected_instrument = isset($_GET['osm_instrument_filter']) ? intval($_GET['osm_instrument_filter']) : 0;
-    $selected_season = intval($atts['season']);
+    $selected_instrument = isset($_GET['osm_instrument_filter']) ? intval($_GET['osm_instrument_filter']) : intval($atts['instrument']);
 
     $args = [
         'post_type'      => 'sheet_music',
@@ -390,25 +394,32 @@ function osm_shortcode($atts){
         'order'          => 'ASC'
     ];
 
-    if ($selected_season) {
+    // Single post by ID
+    if (!empty($atts['id'])) {
+        $args['p'] = intval($atts['id']);
+    }
+
+    // Filter by season slug
+    if (!empty($atts['season'])) {
         $args['tax_query'] = [[
             'taxonomy' => 'season',
-            'field'    => 'term_id',
-            'terms'    => [$selected_season],
+            'field'    => 'slug',
+            'terms'    => array_map('sanitize_title', explode(',', $atts['season'])),
             'include_children' => false,
         ]];
     }
 
     $query = new WP_Query($args);
-    if(!$query->have_posts()) return '<p>No sheet music found.</p>';
+    if (!$query->have_posts()) return '<p>No sheet music found.</p>';
 
-    // FILTER BY INSTRUMENT
+    $output = '';
+
+    // ----------------- INSTRUMENT FILTER FORM -----------------
     $instruments = get_terms([
         'taxonomy'   => 'instrument',
         'hide_empty' => false,
         'orderby'    => 'term_order',
     ]);
-    $output = '';
 
     if($instruments && !is_wp_error($instruments)){
         $tree = [];
@@ -432,9 +443,7 @@ function osm_shortcode($atts){
                 $selected = ($inst->term_id == $selected_id) ? 'selected' : '';
                 $out .= '<option value="'.intval($inst->term_id).'" '.$selected.'>'.$prefix.esc_html($inst->name).'</option>';
 
-                // CONTROL GENERATIONS OF INSTRUMENTS SHOWN IN PULLDOWN
-                // HIERARCHY OF SEARCH IS RESPECTED FOR SUB-CATEGORIES BUT NOT DISPLAYED IN UI
-                if ($level < 1) {
+                if ($level < 1) { // only one generation of children in UI
                     $out .= $render_options($inst->term_id, $tree, $selected_id, $level + 1);
                 }
             }
@@ -453,6 +462,7 @@ function osm_shortcode($atts){
         $output .= '</div></form>';
     }
 
+    // Build full instrument ID list (selected + children + parents)
     $instrument_ids = [];
     if($selected_instrument){
         $instrument_ids[] = $selected_instrument;
@@ -468,7 +478,7 @@ function osm_shortcode($atts){
         }
     }
 
-    // SHEET MUSIC RECORDS LOOP
+    // ----------------- SHEET MUSIC RECORDS -----------------
     while($query->have_posts()){
         $query->the_post();
         $files = get_post_meta(get_the_ID(), 'osm_files', true);
@@ -482,7 +492,7 @@ function osm_shortcode($atts){
         $output .= '<h3>'.get_the_title().'</h3>';
         if($composer) $output .= '<span class="osm-meta-composer">'.esc_html($composer).'</span><br>';
 
-        // Group & sort by instrument order
+        // Group & sort files by instrument order
         $files_grouped = [];
         foreach($files as $f) $files_grouped[$f['instrument']][] = $f;
         uasort($files_grouped, function($a, $b){
@@ -491,7 +501,6 @@ function osm_shortcode($atts){
             return $order_a - $order_b;
         });
 
-        // Flatten
         $all_files_sorted = [];
         foreach($files_grouped as $fgroup){
             foreach($fgroup as $f){
@@ -499,13 +508,10 @@ function osm_shortcode($atts){
             }
         }
 
-        // Display all buttons together
+        // Display file buttons
         $output .= '<div class="osm-file-buttons">';
         foreach($all_files_sorted as $f){
-
-            // Skip non-matching instruments
             if($instrument_ids && !in_array($f['instrument'], $instrument_ids)) continue;
-
             $term = $f['instrument'] ? get_term($f['instrument'], 'instrument') : null;
             $title = $term ? $term->name : 'Misc';
             $url = wp_get_attachment_url($f['attachment_id']);
