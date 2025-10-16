@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Sheet Music Librarian
  * Description: Manage and display sheet music pieces with instrument files, composer, season, notes, and last updated info.
- * Version: 0.8.0
+ * Version: 1.0.0
  * Author: Brad Salomons
  * License: GPL2+
  */
@@ -414,7 +414,7 @@ function osm_shortcode($atts){
 
     $output = '';
 
-    // ----------------- INSTRUMENT FILTER FORM -----------------
+    // INSTRUMENT FILTER FORM 
     $instruments = get_terms([
         'taxonomy'   => 'instrument',
         'hide_empty' => false,
@@ -478,7 +478,7 @@ function osm_shortcode($atts){
         }
     }
 
-    // ----------------- SHEET MUSIC RECORDS -----------------
+    // SHEET MUSIC RECORDS 
     while($query->have_posts()){
         $query->the_post();
         $files = get_post_meta(get_the_ID(), 'osm_files', true);
