@@ -14,7 +14,7 @@ As the volunteer in charge of managing our online member music library where mus
 
 It simplifies managing files on the back end and creates interactive filters on the front.
 
-**A new Content Type is created: **
+**A new Content Type is created:**
 
 Sheet Music, provides basic info including title, composer, and additonal notes fields, and attaching unlimited instrument-associated files to each record.
 
