@@ -3,7 +3,7 @@ A sheet music manager for the orchestra website
 
 **General Usage**
 
-**To show all seasons: **
+**To show all seasons:**
 [sheet_music_library]
 
 **To show only limited selections:**
