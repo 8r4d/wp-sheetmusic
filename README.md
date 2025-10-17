@@ -1,7 +1,7 @@
 # wp-sheetmusic
 A sheet music manager for the orchestra website
 
-**General Usage**
+# General Usage
 
 **To show all seasons:**
 [sheet_music_library]
