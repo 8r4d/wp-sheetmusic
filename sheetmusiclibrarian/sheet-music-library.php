@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Sheet Music Librarian
  * Description: Manage and display sheet music pieces with instrument files, composer, season, notes, and last updated info.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: Brad Salomons
  * License: GPL2+
  */
@@ -46,7 +46,7 @@ function osm_register_sheet_music() {
 
 // Register Instrument Taxonomy
 
-add_action('init', 'osm_register_instrument_taxonomy');
+add_action('init', 'osm_register_instrument_taxonomy', 11);
 function osm_register_instrument_taxonomy() {
     $labels = [
         'name' => 'Instruments',
@@ -146,32 +146,46 @@ add_action('admin_enqueue_scripts', function($hook) {
 });
 
 add_action('instrument_edit_form_fields', 'osm_instrument_order_field');
-function osm_instrument_order_field($term){
+function osm_instrument_order_field($term) {
     $order = get_term_meta($term->term_id, 'instrument_order', true);
     ?>
     <tr class="form-field">
         <th scope="row" valign="top"><label for="instrument_order">Sort Order</label></th>
         <td>
             <input type="number" name="instrument_order" id="instrument_order" value="<?php echo esc_attr($order ?: 0); ?>" style="width:60px;" />
+            <?php
+            // output nonce for verification
+            wp_nonce_field('osm_instrument_order_' . $term->term_id, 'osm_instrument_order_nonce');
+            ?>
             <p class="description">Enter a number to control the display order on the frontend (smaller numbers first).</p>
         </td>
     </tr>
     <?php
 }
 
+
 add_action('edited_instrument', 'osm_save_instrument_order');
-function osm_save_instrument_order($term_id){
-    // Verify nonce from the edit form
-    if ( ! isset( $_POST['_wpnonce'] ) || ! check_admin_referer( 'edit-tag_' . $term_id ) ) {
-        return;
+add_action('created_instrument', 'osm_save_instrument_order');
+
+function osm_save_instrument_order($term_id) {
+    // Unsash and sanitize the nonce first
+    $raw_nonce = isset($_POST['osm_instrument_order_nonce']) 
+        ? sanitize_text_field( wp_unslash( $_POST['osm_instrument_order_nonce'] ) ) 
+        : '';
+
+    $nonce = sanitize_text_field($raw_nonce);
+
+    // Verify nonce
+    if ( ! $nonce || ! wp_verify_nonce($nonce, 'osm_instrument_order_' . $term_id) ) {
+        return; // invalid nonce
     }
 
+    // Save the order
     if ( isset($_POST['instrument_order']) ) {
         $order = intval( wp_unslash($_POST['instrument_order']) );
-        update_term_meta($term_id, 'instrument_order', $order);
+        update_term_meta( $term_id, 'instrument_order', $order );
     }
 }
-
 
 function osm_render_combined_meta_box($post) {
     wp_nonce_field('osm_save_sheet_combined', 'osm_sheet_combined_nonce');

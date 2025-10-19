@@ -4,7 +4,7 @@ Donate link: https://8r4d.com/plugins/
 Tags: sheet music, pdf, library, orchestra, band 
 Requires at least: 6.8
 Tested up to: 6.8
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GNU General Public License v2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
