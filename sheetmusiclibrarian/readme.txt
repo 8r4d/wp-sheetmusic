@@ -4,7 +4,7 @@ Donate link: https://8r4d.com/plugins/
 Tags: sheet music, pdf, library, orchestra, band 
 Requires at least: 6.8
 Tested up to: 6.8
-Stable tag: 1.1.2
+Stable tag: 1.1.3
 License: GNU General Public License v2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -55,6 +55,9 @@ individual piece: [sheet_music_library id="3783"]
 
 
  == Changelog ==
+= 1.1.3 =
+* Added a Wikipedia icon for external links pointing to wikipedia.org.
+
 = 1.1.2 =
 * External links now show a platform-specific icon (YouTube, Spotify, SoundCloud, Apple Music, Vimeo) based on the link's domain, falling back to a generic link icon.
 

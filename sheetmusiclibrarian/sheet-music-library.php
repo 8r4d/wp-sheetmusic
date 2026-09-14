@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Sheet Music Librarian
  * Description: Manage and display sheet music pieces with instrument files, composer, season, notes, external links, and last updated info.
- * Version: 1.1.2
+ * Version: 1.1.3
  * Author: Brad Salomons
  * License: GPL2+
  */
@@ -508,6 +508,7 @@ function osm_detect_link_type($url) {
         'spotify'    => ['spotify.com'],
         'soundcloud' => ['soundcloud.com'],
         'apple'      => ['music.apple.com'],
+        'wikipedia'  => ['wikipedia.org'],
     ];
 
     foreach ($domains as $type => $hosts) {
@@ -528,6 +529,7 @@ function osm_link_icon_svg($type) {
         'spotify' => '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#1DB954"/><path d="M7 10c4-1.2 8-.8 10.5.9M6.8 13.2c3.3-1 6.6-.7 8.9.7M7 16c2.6-.7 5-.5 6.7.6" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>',
         'soundcloud' => '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="1" width="22" height="22" rx="5" fill="#FF7700"/><path d="M6 12.5v5h11.5a2.75 2.75 0 000-5.5c-.15-2.3-2-4-4.2-4-1.4 0-2.7.7-3.4 1.9-.5-.5-1.2-.8-1.9-.8-1.3 0-2 1-2 1.4z" fill="#fff"/></svg>',
         'apple' => '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="1" width="22" height="22" rx="5" fill="#111"/><path d="M14.5 6.2v7.6a2.2 2.2 0 11-1.3-2V8.8L10 9.6v5a2.2 2.2 0 11-1.3-2V8l5.8-1.8z" fill="#fff"/></svg>',
+        'wikipedia' => '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#fff" stroke="#888" stroke-width="1.2"/><text x="12" y="17" text-anchor="middle" font-family="Georgia, \'Times New Roman\', serif" font-size="13" font-weight="700" fill="#000">W</text></svg>',
         'generic' => '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 14.5l5-5M8.8 16.2l-2 2a2.8 2.8 0 01-4-4l2-2m10.4 0l2-2a2.8 2.8 0 00-4-4l-2 2" stroke="#0073aa" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>',
     ];
     return isset($icons[$type]) ? $icons[$type] : $icons['generic'];
