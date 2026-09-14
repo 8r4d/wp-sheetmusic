@@ -103,3 +103,35 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+.osm-links {
+    margin: 10px 0;
+}
+
+.osm-links-list {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0;
+}
+
+.osm-links-list li {
+    margin: 4px 0;
+}
+
+.osm-links-list a {
+    display: inline-flex;
+    align-items: center;
+    color: #0073aa;
+    text-decoration: none;
+    font-size: 0.95em;
+}
+
+.osm-links-list a:hover {
+    text-decoration: underline;
+}
+
+.osm-links-list a::before {
+    content: "\1F517";
+    margin-right: 6px;
+    font-size: 0.9em;
+}

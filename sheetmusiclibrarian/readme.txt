@@ -4,7 +4,7 @@ Donate link: https://8r4d.com/plugins/
 Tags: sheet music, pdf, library, orchestra, band 
 Requires at least: 6.8
 Tested up to: 6.8
-Stable tag: 1.0.1
+Stable tag: 1.1
 License: GNU General Public License v2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,7 +22,7 @@ It simplifies managing files on the back end and creates interactive filters on 
 
 A new Content Type is created: 
 
-Sheet Music, provides basic info including title, composer, and additonal notes fields, and attaching unlimited instrument-associated files to each record.
+Sheet Music, provides basic info including title, composer, additonal notes, and one or more external reference links (eg. YouTube videos), and attaching unlimited instrument-associated files to each record.
 
 Taxonomies:
 
@@ -55,5 +55,8 @@ individual piece: [sheet_music_library id="3783"]
 
 
  == Changelog ==
+= 1.1 =
+* Added support for one or more external reference links (eg. YouTube videos) per piece, editable below the Notes field and displayed on the front end.
+
 = 1.0 =
 * Initial public release. This is in use and in active testing on our orchestra's website.

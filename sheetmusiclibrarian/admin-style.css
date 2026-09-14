@@ -24,6 +24,22 @@
     text-overflow: ellipsis;
 }
 
+.osm-link-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.osm-link-inner {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    background: #fafafa;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 6px 10px;
+}
+
 .osm-shortcode-box {
     background: #f9f9f9;
     border: 1px solid #ddd;

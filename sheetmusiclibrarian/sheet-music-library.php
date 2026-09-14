@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Sheet Music Librarian
- * Description: Manage and display sheet music pieces with instrument files, composer, season, notes, and last updated info.
- * Version: 1.0.1
+ * Description: Manage and display sheet music pieces with instrument files, composer, season, notes, external links, and last updated info.
+ * Version: 1.1.0
  * Author: Brad Salomons
  * License: GPL2+
  */
@@ -197,6 +197,36 @@ function osm_render_combined_meta_box($post) {
     echo '<p><label>Composer: <input type="text" name="osm_composer" value="'.esc_attr($composer).'" style="width:100%;" /></label></p>';
     echo '<p><label>Notes:<br><textarea name="osm_notes" rows="4" style="width:100%;">'.esc_textarea($notes).'</textarea></label></p>';
 
+    $links = get_post_meta($post->ID, 'osm_links', true);
+    if(!is_array($links)) $links = [];
+
+    echo '<p><label>External Links (e.g. YouTube videos, reference recordings):</label></p>';
+    echo '<div id="osm-links-container">';
+
+    foreach($links as $i => $l){
+        $link_title = isset($l['title']) ? $l['title'] : '';
+        $link_url   = isset($l['url']) ? $l['url'] : '';
+
+        echo '<div class="osm-link-row">';
+        echo '  <div class="osm-link-inner">';
+        echo '      <input type="text" class="osm-link-title" name="osm_links['.esc_html($i).'][title]" placeholder="Link title (e.g. YouTube Reference)" value="'.esc_attr($link_title).'" style="flex:1;" />';
+        echo '      <input type="url" class="osm-link-url" name="osm_links['.esc_html($i).'][url]" placeholder="https://..." value="'.esc_attr($link_url).'" style="flex:2; margin-left:8px;" />';
+        echo '      <button type="button" class="osm-remove-link button" style="margin-left:8px;">Remove</button>';
+        echo '  </div>';
+        echo '</div>';
+    }
+
+    echo '<div class="osm-link-row template" style="display:none;">';
+    echo '  <div class="osm-link-inner">';
+    echo '      <input type="text" class="osm-link-title" name="osm_links[__LINKINDEX__][title]" placeholder="Link title (e.g. YouTube Reference)" value="" style="flex:1;" />';
+    echo '      <input type="url" class="osm-link-url" name="osm_links[__LINKINDEX__][url]" placeholder="https://..." value="" style="flex:2; margin-left:8px;" />';
+    echo '      <button type="button" class="osm-remove-link button" style="margin-left:8px;">Remove</button>';
+    echo '  </div>';
+    echo '</div>';
+
+    echo '</div>';
+    echo '<div style="padding-top:8px; padding-bottom:8px;"><button type="button" id="osm-add-link" class="button">Add Link</button></div>';
+
     $files = get_post_meta($post->ID, 'osm_files', true);
     if(!is_array($files)) $files = [];
 
@@ -279,6 +309,22 @@ function osm_render_combined_meta_box($post) {
     ?>
     <script>
     jQuery(document).ready(function($){
+        var linksContainer = $('#osm-links-container');
+        var linkTemplate = linksContainer.find('.template').clone().removeClass('template').show();
+        var linkIndex = linksContainer.find('.osm-link-row').length;
+
+        $('#osm-add-link').click(function(){
+            var newRow = linkTemplate.clone().html(function(i, oldHTML){
+                return oldHTML.replace(/__LINKINDEX__/g, linkIndex);
+            });
+            linksContainer.append(newRow);
+            linkIndex++;
+        });
+
+        linksContainer.on('click', '.osm-remove-link', function(){
+            $(this).closest('.osm-link-row').remove();
+        });
+
         var container = $('#osm-files-container');
         var template = container.find('.template').clone().removeClass('template').show();
         var index = container.find('.osm-file-row').length;
@@ -377,6 +423,28 @@ function osm_save_sheet_combined($post_id) {
         $notes = sanitize_textarea_field(wp_unslash($_POST['osm_notes']));
         update_post_meta($post_id, 'osm_notes', $notes);
     }
+
+    // Handle external links
+    $raw_links = [];
+    $input_links = filter_input(INPUT_POST, 'osm_links', FILTER_DEFAULT, FILTER_REQUIRE_ARRAY);
+    if ( is_array( $input_links ) ) {
+        $raw_links = wp_unslash( $input_links );
+    }
+
+    $clean_links = [];
+    foreach ( $raw_links as $l ) {
+        $url = isset( $l['url'] ) ? esc_url_raw( trim( $l['url'] ) ) : '';
+        if ( ! $url ) continue;
+
+        $title = isset( $l['title'] ) ? sanitize_text_field( $l['title'] ) : '';
+
+        $clean_links[] = [
+            'title' => $title,
+            'url'   => $url,
+        ];
+    }
+
+    update_post_meta( $post_id, 'osm_links', $clean_links );
 
     // Save selected seasons (taxonomy terms)
     if (isset($_POST['osm_season']) && is_array($_POST['osm_season'])) {
@@ -578,6 +646,8 @@ function osm_shortcode_optimized($atts){
 
         $composer = get_post_meta(get_the_ID(), 'osm_composer', true);
         $notes    = get_post_meta(get_the_ID(), 'osm_notes', true);
+        $links    = get_post_meta(get_the_ID(), 'osm_links', true);
+        if(!is_array($links)) $links = [];
         $last_updated = get_post_modified_time('F j, Y', true, get_the_ID());
 
         $output .= '<div class="osm-piece">';
@@ -618,6 +688,17 @@ function osm_shortcode_optimized($atts){
         $output .= '</div>';
 
         if($notes) $output .= '<span class="osm-meta">Notes: '.esc_html($notes).'</span><br>';
+
+        if($links){
+            $output .= '<div class="osm-links"><ul class="osm-links-list">';
+            foreach($links as $link){
+                if(empty($link['url'])) continue;
+                $label = !empty($link['title']) ? $link['title'] : $link['url'];
+                $output .= '<li><a href="'.esc_url($link['url']).'" target="_blank" rel="noopener noreferrer">'.esc_html($label).'</a></li>';
+            }
+            $output .= '</ul></div>';
+        }
+
         $output .= '<span class="osm-meta-updated">Updated: '.esc_html($last_updated).'</span><br>';
         $output .= '</div>';
     }
