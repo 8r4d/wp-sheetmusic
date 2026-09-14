@@ -4,7 +4,7 @@ Donate link: https://8r4d.com/plugins/
 Tags: sheet music, pdf, library, orchestra, band 
 Requires at least: 6.8
 Tested up to: 6.8
-Stable tag: 1.1
+Stable tag: 1.1.2
 License: GNU General Public License v2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -55,6 +55,12 @@ individual piece: [sheet_music_library id="3783"]
 
 
  == Changelog ==
+= 1.1.2 =
+* External links now show a platform-specific icon (YouTube, Spotify, SoundCloud, Apple Music, Vimeo) based on the link's domain, falling back to a generic link icon.
+
+= 1.1.1 =
+* External links are now drag-and-drop sortable in the editor; the front-end display order follows the order set there.
+
 = 1.1 =
 * Added support for one or more external reference links (eg. YouTube videos) per piece, editable below the Notes field and displayed on the front end.
 

@@ -115,6 +115,9 @@
 }
 
 .osm-links-list li {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     margin: 4px 0;
 }
 
@@ -126,12 +129,19 @@
     font-size: 0.95em;
 }
 
-.osm-links-list a:hover {
+.osm-links-list a:hover .osm-link-label {
     text-decoration: underline;
 }
 
-.osm-links-list a::before {
-    content: "\1F517";
-    margin-right: 6px;
-    font-size: 0.9em;
+.osm-link-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+}
+
+.osm-link-icon svg {
+    width: 100%;
+    height: 100%;
+    display: block;
 }

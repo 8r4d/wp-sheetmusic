@@ -40,6 +40,24 @@
     padding: 6px 10px;
 }
 
+.osm-link-drag-handle {
+    cursor: move;
+    color: #888;
+    margin-right: 6px;
+}
+
+.osm-link-row-placeholder {
+    border: 1px dashed #bbb;
+    border-radius: 4px;
+    background: #f0f0f0;
+    margin-bottom: 8px;
+    height: 42px;
+}
+
+.osm-link-row.ui-sortable-helper {
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
 .osm-shortcode-box {
     background: #f9f9f9;
     border: 1px solid #ddd;

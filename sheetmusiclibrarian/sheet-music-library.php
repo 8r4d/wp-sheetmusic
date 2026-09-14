@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Sheet Music Librarian
  * Description: Manage and display sheet music pieces with instrument files, composer, season, notes, external links, and last updated info.
- * Version: 1.1.0
+ * Version: 1.1.2
  * Author: Brad Salomons
  * License: GPL2+
  */
@@ -142,6 +142,7 @@ add_action('admin_enqueue_scripts', function($hook) {
     if (in_array($hook, ['post.php', 'post-new.php'])) {
         wp_enqueue_media();
         wp_enqueue_script('jquery');
+        wp_enqueue_script('jquery-ui-sortable');
     }
 });
 
@@ -200,7 +201,7 @@ function osm_render_combined_meta_box($post) {
     $links = get_post_meta($post->ID, 'osm_links', true);
     if(!is_array($links)) $links = [];
 
-    echo '<p><label>External Links (e.g. YouTube videos, reference recordings):</label></p>';
+    echo '<p><label>External Links (e.g. YouTube videos, reference recordings):</label> <span class="description">Drag <span class="dashicons dashicons-menu"></span> to reorder.</span></p>';
     echo '<div id="osm-links-container">';
 
     foreach($links as $i => $l){
@@ -209,6 +210,7 @@ function osm_render_combined_meta_box($post) {
 
         echo '<div class="osm-link-row">';
         echo '  <div class="osm-link-inner">';
+        echo '      <span class="osm-link-drag-handle dashicons dashicons-menu" title="Drag to reorder"></span>';
         echo '      <input type="text" class="osm-link-title" name="osm_links['.esc_html($i).'][title]" placeholder="Link title (e.g. YouTube Reference)" value="'.esc_attr($link_title).'" style="flex:1;" />';
         echo '      <input type="url" class="osm-link-url" name="osm_links['.esc_html($i).'][url]" placeholder="https://..." value="'.esc_attr($link_url).'" style="flex:2; margin-left:8px;" />';
         echo '      <button type="button" class="osm-remove-link button" style="margin-left:8px;">Remove</button>';
@@ -218,6 +220,7 @@ function osm_render_combined_meta_box($post) {
 
     echo '<div class="osm-link-row template" style="display:none;">';
     echo '  <div class="osm-link-inner">';
+    echo '      <span class="osm-link-drag-handle dashicons dashicons-menu" title="Drag to reorder"></span>';
     echo '      <input type="text" class="osm-link-title" name="osm_links[__LINKINDEX__][title]" placeholder="Link title (e.g. YouTube Reference)" value="" style="flex:1;" />';
     echo '      <input type="url" class="osm-link-url" name="osm_links[__LINKINDEX__][url]" placeholder="https://..." value="" style="flex:2; margin-left:8px;" />';
     echo '      <button type="button" class="osm-remove-link button" style="margin-left:8px;">Remove</button>';
@@ -323,6 +326,14 @@ function osm_render_combined_meta_box($post) {
 
         linksContainer.on('click', '.osm-remove-link', function(){
             $(this).closest('.osm-link-row').remove();
+        });
+
+        linksContainer.sortable({
+            items: '.osm-link-row:not(.template)',
+            handle: '.osm-link-drag-handle',
+            axis: 'y',
+            placeholder: 'osm-link-row-placeholder',
+            forcePlaceholderSize: true
         });
 
         var container = $('#osm-files-container');
@@ -484,6 +495,43 @@ function osm_save_sheet_combined($post_id) {
 //////////////////////////////
 // FRONT END
 //////////////////////////////
+
+// Detect a link's platform from its host so we can show a matching icon.
+function osm_detect_link_type($url) {
+    $host = wp_parse_url($url, PHP_URL_HOST);
+    if (!$host) return 'generic';
+    $host = strtolower(preg_replace('/^www\./', '', $host));
+
+    $domains = [
+        'youtube'    => ['youtube.com', 'youtu.be'],
+        'vimeo'      => ['vimeo.com'],
+        'spotify'    => ['spotify.com'],
+        'soundcloud' => ['soundcloud.com'],
+        'apple'      => ['music.apple.com'],
+    ];
+
+    foreach ($domains as $type => $hosts) {
+        foreach ($hosts as $d) {
+            if ($host === $d || substr($host, -strlen('.' . $d)) === '.' . $d) {
+                return $type;
+            }
+        }
+    }
+    return 'generic';
+}
+
+// Small inline SVG icons, one per known platform, plus a generic link fallback.
+function osm_link_icon_svg($type) {
+    $icons = [
+        'youtube' => '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="4" width="22" height="16" rx="4" fill="#FF0000"/><path d="M10 8.5l7 3.5-7 3.5z" fill="#fff"/></svg>',
+        'vimeo' => '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="1" width="22" height="22" rx="5" fill="#1AB7EA"/><path d="M9 7.5l8 4.5-8 4.5z" fill="#fff"/></svg>',
+        'spotify' => '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#1DB954"/><path d="M7 10c4-1.2 8-.8 10.5.9M6.8 13.2c3.3-1 6.6-.7 8.9.7M7 16c2.6-.7 5-.5 6.7.6" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>',
+        'soundcloud' => '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="1" width="22" height="22" rx="5" fill="#FF7700"/><path d="M6 12.5v5h11.5a2.75 2.75 0 000-5.5c-.15-2.3-2-4-4.2-4-1.4 0-2.7.7-3.4 1.9-.5-.5-1.2-.8-1.9-.8-1.3 0-2 1-2 1.4z" fill="#fff"/></svg>',
+        'apple' => '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="1" width="22" height="22" rx="5" fill="#111"/><path d="M14.5 6.2v7.6a2.2 2.2 0 11-1.3-2V8.8L10 9.6v5a2.2 2.2 0 11-1.3-2V8l5.8-1.8z" fill="#fff"/></svg>',
+        'generic' => '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 14.5l5-5M8.8 16.2l-2 2a2.8 2.8 0 01-4-4l2-2m10.4 0l2-2a2.8 2.8 0 00-4-4l-2 2" stroke="#0073aa" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>',
+    ];
+    return isset($icons[$type]) ? $icons[$type] : $icons['generic'];
+}
 
 add_action('wp_enqueue_scripts', function(){
     $css_file = plugin_dir_path(__FILE__) . 'style.css';
@@ -694,7 +742,13 @@ function osm_shortcode_optimized($atts){
             foreach($links as $link){
                 if(empty($link['url'])) continue;
                 $label = !empty($link['title']) ? $link['title'] : $link['url'];
-                $output .= '<li><a href="'.esc_url($link['url']).'" target="_blank" rel="noopener noreferrer">'.esc_html($label).'</a></li>';
+                $type  = osm_detect_link_type($link['url']);
+                $icon  = osm_link_icon_svg($type);
+                $output .= '<li>';
+                $output .= '<span class="osm-link-icon">'.$icon.'</span>';
+                $output .= '<a href="'.esc_url($link['url']).'" class="osm-link osm-link-'.esc_attr($type).'" target="_blank" rel="noopener noreferrer">';
+                $output .= '<span class="osm-link-label">'.esc_html($label).'</span>';
+                $output .= '</a></li>';
             }
             $output .= '</ul></div>';
         }
