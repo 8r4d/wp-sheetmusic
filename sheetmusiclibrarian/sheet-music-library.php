@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Sheet Music Librarian
  * Description: Manage and display sheet music pieces with instrument files, composer, season, notes, external links, and last updated info.
- * Version: 1.3.1
+ * Version: 1.3.2
  * Author: Brad Salomons
  * License: GPL2+
  */
@@ -36,7 +36,8 @@ function osm_register_sheet_music() {
         'show_ui' => true,
         'show_in_menu' => true,
         'menu_icon' => 'dashicons-media-document',
-        'capability_type' => 'post',
+        'capability_type' => ['sheet_music_piece', 'sheet_music_pieces'],
+        'map_meta_cap' => true,
         'supports' => ['title'],
         'rewrite' => false,
     ];
@@ -67,6 +68,12 @@ function osm_register_instrument_taxonomy() {
         'show_admin_column' => true,
         'query_var' => true,
         'rewrite' => ['slug' => 'instrument'],
+        'capabilities' => [
+            'manage_terms' => 'manage_sheet_music_instruments',
+            'edit_terms'   => 'manage_sheet_music_instruments',
+            'delete_terms' => 'manage_sheet_music_instruments',
+            'assign_terms' => 'edit_sheet_music_pieces',
+        ],
     ];
 
     register_taxonomy('instrument', ['sheet_music'], $args);
@@ -95,10 +102,114 @@ function osm_register_season_taxonomy() {
         'show_admin_column' => true,
         'query_var' => true,
         'rewrite' => ['slug' => 'season'],
+        'capabilities' => [
+            'manage_terms' => 'edit_sheet_music_seasons',
+            'edit_terms'   => 'edit_sheet_music_seasons',
+            'delete_terms' => 'delete_sheet_music_seasons',
+            'assign_terms' => 'edit_sheet_music_pieces',
+        ],
     ];
 
     register_taxonomy('season', ['sheet_music'], $args);
 }
+
+//////////////////////////////
+// PERMISSIONS
+//////////////////////////////
+
+// The plugin has its own capabilities so music access can be given without
+// access to the rest of the site. Existing roles get the music equivalents of
+// the post capabilities they already have, so nobody's access changes.
+
+define('OSM_CAPS_VERSION', 1);
+
+function osm_install_capabilities() {
+    $equivalents = [
+        'edit_posts'             => ['edit_sheet_music_pieces'],
+        'edit_others_posts'      => ['edit_others_sheet_music_pieces', 'manage_sheet_music_files'],
+        'edit_published_posts'   => ['edit_published_sheet_music_pieces'],
+        'edit_private_posts'     => ['edit_private_sheet_music_pieces'],
+        'publish_posts'          => ['publish_sheet_music_pieces'],
+        'read_private_posts'     => ['read_private_sheet_music_pieces'],
+        'delete_posts'           => ['delete_sheet_music_pieces'],
+        'delete_others_posts'    => ['delete_others_sheet_music_pieces'],
+        'delete_published_posts' => ['delete_published_sheet_music_pieces'],
+        'delete_private_posts'   => ['delete_private_sheet_music_pieces'],
+        'manage_categories'      => ['edit_sheet_music_seasons', 'delete_sheet_music_seasons', 'manage_sheet_music_instruments'],
+    ];
+    foreach (wp_roles()->role_objects as $role) {
+        foreach ($equivalents as $existing => $caps) {
+            if (!$role->has_cap($existing)) continue;
+            foreach ($caps as $cap) $role->add_cap($cap);
+        }
+    }
+
+    // Music Assistant: edits pieces and seasons, nothing else on the site.
+    $assistant = get_role('music_assistant') ?: add_role('music_assistant', 'Music Assistant', ['read' => true]);
+    foreach ([
+        'upload_files',
+        'edit_sheet_music_pieces',
+        'edit_others_sheet_music_pieces',
+        'edit_published_sheet_music_pieces',
+        'publish_sheet_music_pieces',
+        'edit_sheet_music_seasons',
+    ] as $cap) {
+        $assistant->add_cap($cap);
+    }
+
+    update_option('osm_caps_version', OSM_CAPS_VERSION);
+}
+
+register_activation_hook(__FILE__, 'osm_install_capabilities');
+
+// Plugin updates don't run the activation hook, so also install on first load.
+add_action('init', function() {
+    if (intval(get_option('osm_caps_version')) < OSM_CAPS_VERSION) osm_install_capabilities();
+}, 5);
+
+// Someone who can work on sheet music but nothing else on the site.
+function osm_is_music_only_user($user = null) {
+    $user = $user ?: wp_get_current_user();
+    return $user && $user->exists() && $user->has_cap('edit_sheet_music_pieces') && !$user->has_cap('edit_posts');
+}
+
+// Keep their admin uncluttered: land on Sheet Music, no Dashboard or Media menu.
+add_filter('login_redirect', function($redirect_to, $requested, $user) {
+    if ($user instanceof WP_User && osm_is_music_only_user($user) && (!$requested || $redirect_to === admin_url())) {
+        return admin_url('edit.php?post_type=sheet_music');
+    }
+    return $redirect_to;
+}, 10, 3);
+
+add_action('load-index.php', function() {
+    if (osm_is_music_only_user()) {
+        wp_safe_redirect(admin_url('edit.php?post_type=sheet_music'));
+        exit;
+    }
+});
+
+add_action('admin_menu', function() {
+    if (!osm_is_music_only_user()) return;
+    remove_menu_page('index.php');
+    remove_menu_page('upload.php');
+}, 999);
+
+// In the file picker, only show sheet music files and their own uploads.
+add_filter('ajax_query_attachments_args', function($query) {
+    if (!osm_is_music_only_user()) return $query;
+
+    $own = get_posts([
+        'post_type'      => 'attachment',
+        'post_status'    => 'inherit',
+        'author'         => get_current_user_id(),
+        'posts_per_page' => -1,
+        'fields'         => 'ids',
+    ]);
+    $allowed = array_unique(array_merge(osm_all_sheet_music_attachment_ids(), $own));
+    if (!empty($query['post__in'])) $allowed = array_intersect($allowed, array_map('intval', $query['post__in']));
+    $query['post__in'] = $allowed ? array_values($allowed) : [0];
+    return $query;
+});
 
 //////////////////////////////
 // EDITOR
@@ -333,10 +444,10 @@ function osm_render_combined_meta_box($post) {
     echo '<div style="padding-top:8px;"><button type="button" id="osm-add-file" class="button">Add File</button> ';
     echo '<button type="button" id="osm-bulk-upload" class="button">Bulk Upload</button></div>';
 
-    // SHORTCODE HINTS
+    // SHORTCODE HINTS (only useful to people who edit pages)
     $seasons = get_the_terms($post->ID, 'season');
 
-    echo '<div class="osm-shortcode-box">';
+    echo '<div class="osm-shortcode-box"'.(osm_is_music_only_user() ? ' hidden' : '').'>';
     echo '<strong>Embed this piece on the front end:</strong>';
     echo '<p>You can embed this sheet music using one of the following shortcodes:</p>';
 
@@ -1352,7 +1463,7 @@ add_action('admin_menu', function() {
         'edit.php?post_type=sheet_music',
         'File Protection',
         'File Protection',
-        'edit_others_posts',
+        'manage_sheet_music_files',
         'osm-file-protection',
         'osm_render_protection_page'
     );
@@ -1368,7 +1479,7 @@ function osm_protection_counts() {
 }
 
 add_action('admin_post_osm_protect_files', function() {
-    if (!current_user_can('edit_others_posts')) wp_die('Sorry, you are not allowed to do that.');
+    if (!current_user_can('manage_sheet_music_files')) wp_die('Sorry, you are not allowed to do that.');
     check_admin_referer('osm_protect_files');
 
     $moved = 0;
@@ -1390,7 +1501,7 @@ add_action('admin_post_osm_protect_files', function() {
 });
 
 add_action('admin_post_osm_check_access', function() {
-    if (!current_user_can('edit_others_posts')) wp_die('Sorry, you are not allowed to do that.');
+    if (!current_user_can('manage_sheet_music_files')) wp_die('Sorry, you are not allowed to do that.');
     check_admin_referer('osm_check_access');
     osm_check_direct_access(true);
     wp_safe_redirect(admin_url('edit.php?post_type=sheet_music&page=osm-file-protection'));
@@ -1463,7 +1574,7 @@ function osm_render_protection_page() {
 // Nudge on the Sheet Music list screen when something needs attention.
 add_action('admin_notices', function() {
     $screen = get_current_screen();
-    if (!$screen || $screen->id !== 'edit-sheet_music' || !current_user_can('edit_others_posts')) return;
+    if (!$screen || $screen->id !== 'edit-sheet_music' || !current_user_can('manage_sheet_music_files')) return;
 
     $remaining = count(osm_protection_counts()['unprotected']);
     $open = get_transient('osm_direct_access') === 'open';

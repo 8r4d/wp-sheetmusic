@@ -69,3 +69,5 @@ _Single piece:_
 [sheet_music_last_updated]
 
 _Options:_ season="christmas" to track a specific season, label="Updated:" to change the text.
+
+**Music Assistant role:** give someone like your conductor the Music Assistant role to edit pieces, assign seasons and set program order. They see only the Sheet Music menu and can't delete pieces or seasons, manage instruments, or touch the rest of the site.

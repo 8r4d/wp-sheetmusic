@@ -45,6 +45,10 @@ Sheet Music Library, the block version of [sheet_music_library]. Pick seasons or
 
 Sheet Music Last Updated, shows the date the collection on the page last changed (a piece added, edited, removed or moved between seasons). Editing a piece doesn't change the page's own modified date, so put this block (or the [sheet_music_last_updated] shortcode) at the top of the page. By default it follows the collections on the same page; you can instead pick seasons in the block sidebar, or use [sheet_music_last_updated season="christmas"] and label="Updated:".
 
+Music Assistant role:
+
+Give a user the Music Assistant role (Users > Edit > Role) to let them edit pieces and seasons without seeing the rest of the site's admin. Administrators and Editors keep full access to the library, including deleting pieces, managing instruments and file protection.
+
 File protection:
 
 Sheet Music > File Protection moves your sheet music files into a private folder. Members download them through links that only appear on your library page and expire after a few weeks, so files can't be opened from old, shared or search-engine links. Protect the page itself with your usual page-protection plugin (eg. Passster); this plugin protects the files.
@@ -75,6 +79,8 @@ Sheet Music > File Protection moves your sheet music files into a private folder
 * "New" and "Updated" badges on pieces changed since the member's last visit (or the last 14 days on a first visit).
 * "Download all parts" button saves every part for the chosen instrument as one zip, built in the browser.
 * Program order: drag pieces into concert order on the season's edit screen; a library showing one season uses that order (orderby="title" for alphabetical).
+* New Music Assistant role for people who help with the library (eg. a conductor): edit any piece, add pieces, assign seasons and set program order, without access to the rest of the site or deleting anything. Their admin shows only Sheet Music and their profile, and the file picker shows only sheet music files.
+* The plugin now has its own permissions; existing roles keep the same access they had.
 * File protection: sheet music files move to a private folder and are downloaded through expiring links (14-28 days) that only appear on the library page. Old direct addresses, including ones indexed by search engines, stop working.
 * New Sheet Music > File Protection screen to protect existing files in one click and check that the server blocks direct access (with the Nginx rule to add if not).
 * Files are protected automatically when a piece is saved, and downloads are marked noindex for search engines.
