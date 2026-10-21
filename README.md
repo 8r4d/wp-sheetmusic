@@ -58,6 +58,10 @@ _Single piece:_
 
 [sheet_music_library id="3108"]
 
+**Program order:** on a season's edit screen (Sheet Music > Seasons), drag pieces into concert order. A library showing just that season lists pieces in that order. Add orderby="title" to keep it alphabetical.
+
+**For members:** filtering by instrument or searching by title/composer is instant, their instrument is remembered, pieces changed since their last visit get a "New" or "Updated" badge, and "Download all parts" saves every part for their instrument as a single zip.
+
 
 
 **Show when the collection was last updated (put at the top of the page):**

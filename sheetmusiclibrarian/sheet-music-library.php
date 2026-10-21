@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Sheet Music Librarian
  * Description: Manage and display sheet music pieces with instrument files, composer, season, notes, external links, and last updated info.
- * Version: 1.2.0
+ * Version: 1.3.0
  * Author: Brad Salomons
  * License: GPL2+
  */
@@ -118,14 +118,17 @@ function osm_add_combined_meta_box() {
 
 add_action('admin_enqueue_scripts', function($hook) {
     global $post_type;
-    if (!in_array($hook, ['post.php', 'post-new.php']) || $post_type !== 'sheet_music') return;
+    $screen    = get_current_screen();
+    $is_piece  = in_array($hook, ['post.php', 'post-new.php']) && $post_type === 'sheet_music';
+    $is_season = $hook === 'term.php' && $screen && $screen->taxonomy === 'season';
+    if (!$is_piece && !$is_season) return;
 
     $css_file = plugin_dir_path(__FILE__) . 'admin-style.css';
     $css_url  = plugin_dir_url(__FILE__) . 'admin-style.css';
     $version  = file_exists($css_file) ? filemtime($css_file) : false;
 
     wp_enqueue_style('osm-admin-style', $css_url, [], $version);
-    wp_enqueue_media();
+    if ($is_piece) wp_enqueue_media();
     wp_enqueue_script('jquery');
     wp_enqueue_script('jquery-ui-sortable');
 });
@@ -181,6 +184,63 @@ function osm_save_instrument_order($term_id) {
         $order = intval( wp_unslash($_POST['instrument_order']) );
         update_term_meta( $term_id, 'instrument_order', $order );
     }
+}
+
+add_action('season_edit_form_fields', 'osm_season_order_field');
+function osm_season_order_field($term) {
+    $piece_ids = get_objects_in_term($term->term_id, 'season');
+    $pieces = (!is_wp_error($piece_ids) && $piece_ids) ? get_posts([
+        'post_type'      => 'sheet_music',
+        'post_status'    => ['publish', 'future', 'draft', 'pending', 'private'],
+        'post__in'       => $piece_ids,
+        'posts_per_page' => -1,
+        'orderby'        => 'title',
+        'order'          => 'ASC',
+    ]) : [];
+    $pieces = osm_sort_by_program_order($pieces, $term->slug);
+    ?>
+    <tr class="form-field">
+        <th scope="row" valign="top"><label>Program Order</label></th>
+        <td>
+            <?php if (!$pieces) : ?>
+                <p class="description">No pieces are in this season yet.</p>
+            <?php else : ?>
+                <ul id="osm-program-order" class="osm-program-order">
+                    <?php foreach ($pieces as $piece) : ?>
+                        <li>
+                            <span class="osm-link-drag-handle dashicons dashicons-menu" title="Drag to reorder"></span>
+                            <?php echo esc_html($piece->post_title ?: '(no title)'); ?>
+                            <?php if ($piece->post_status !== 'publish') : ?>
+                                <em>(<?php echo esc_html(get_post_status_object($piece->post_status)->label); ?>)</em>
+                            <?php endif; ?>
+                            <input type="hidden" name="osm_piece_order[]" value="<?php echo esc_attr($piece->ID); ?>" />
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+                <script>
+                jQuery(function($){
+                    $('#osm-program-order').sortable({ handle: '.osm-link-drag-handle', axis: 'y' });
+                });
+                </script>
+            <?php endif; ?>
+            <?php wp_nonce_field('osm_season_order_' . $term->term_id, 'osm_season_order_nonce'); ?>
+            <p class="description">Drag pieces into concert order. A Sheet Music Library showing only this season lists pieces in this order. Pieces added later appear at the end, alphabetically, until you place them.</p>
+        </td>
+    </tr>
+    <?php
+}
+
+add_action('edited_season', 'osm_save_season_order');
+function osm_save_season_order($term_id) {
+    $nonce = isset($_POST['osm_season_order_nonce']) ? sanitize_text_field(wp_unslash($_POST['osm_season_order_nonce'])) : '';
+    if (!$nonce || !wp_verify_nonce($nonce, 'osm_season_order_' . $term_id)) return;
+
+    $input = filter_input(INPUT_POST, 'osm_piece_order', FILTER_DEFAULT, FILTER_REQUIRE_ARRAY);
+    $order = is_array($input) ? array_values(array_filter(array_map('intval', $input))) : [];
+    if ($order === osm_get_program_order($term_id)) return;
+
+    update_term_meta($term_id, 'osm_piece_order', $order);
+    update_term_meta($term_id, 'osm_last_updated', time()); // reordering changes the season's listing
 }
 
 function osm_render_combined_meta_box($post) {
@@ -536,6 +596,15 @@ add_action('init', function(){
     $version  = file_exists($css_file) ? filemtime($css_file) : false;
 
     wp_register_style('osm-styles', $css_url, [], $version);
+
+    $js_file = plugin_dir_path(__FILE__) . 'frontend.js';
+    wp_register_script(
+        'osm-frontend',
+        plugin_dir_url(__FILE__) . 'frontend.js',
+        [],
+        file_exists($js_file) ? filemtime($js_file) : false,
+        ['in_footer' => true, 'strategy' => 'defer']
+    );
 }, 9);
 
 add_action('wp_enqueue_scripts', function(){
@@ -565,20 +634,50 @@ function osm_get_season_post_ids($slugs) {
     return array_unique(array_map('intval', $season_post_ids));
 }
 
+// Saved concert order for a season (array of piece IDs).
+function osm_get_program_order($term_id) {
+    $order = get_term_meta($term_id, 'osm_piece_order', true);
+    return is_array($order) ? array_map('intval', $order) : [];
+}
+
+// Sort posts into a season's program order; pieces not in it go last, alphabetically.
+function osm_sort_by_program_order($posts, $slug) {
+    $term = get_term_by('slug', $slug, 'season');
+    $order = $term ? osm_get_program_order($term->term_id) : [];
+    if (!$order) return $posts;
+
+    $position = array_flip($order);
+    $last = count($order);
+    usort($posts, function($a, $b) use ($position, $last) {
+        $pa = isset($position[$a->ID]) ? $position[$a->ID] : $last;
+        $pb = isset($position[$b->ID]) ? $position[$b->ID] : $last;
+        return ($pa <=> $pb) ?: strcasecmp($a->post_title, $b->post_title);
+    });
+    return $posts;
+}
+
 add_shortcode('sheet_music_library','osm_shortcode_optimized');
 function osm_shortcode_optimized($atts){
+    static $instance = 0;
+    $instance++;
+
     $atts = shortcode_atts([
-        'id'         => 0,   // single piece by post ID
-        'instrument' => 0,   // optional instrument filter
-        'season'     => '',  // optional season filter by slug
+        'id'         => 0,          // single piece by post ID
+        'instrument' => 0,          // optional instrument filter
+        'season'     => '',         // optional season filter by slug
+        'orderby'    => 'program',  // 'program' (season's concert order, when one season is shown) or 'title'
     ], $atts, 'sheet_music_library');
 
-    // The instrument filter is a plain read-only GET filter, so no nonce is needed
+    // The filters are plain read-only GET parameters, so no nonce is needed
     // (a nonce here goes stale behind page caching and silently breaks the filter).
-    // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+    // phpcs:disable WordPress.Security.NonceVerification.Recommended
     $selected_instrument = isset($_GET['osm_instrument_filter'])
-        ? intval(wp_unslash($_GET['osm_instrument_filter'])) // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        ? intval(wp_unslash($_GET['osm_instrument_filter']))
         : intval($atts['instrument']);
+    $search = isset($_GET['osm_search'])
+        ? sanitize_text_field(wp_unslash($_GET['osm_search']))
+        : '';
+    // phpcs:enable WordPress.Security.NonceVerification.Recommended
 
     $args = [
         'post_type'      => 'sheet_music',
@@ -609,7 +708,24 @@ function osm_shortcode_optimized($atts){
     $query = new WP_Query($args);
     if (!$query->have_posts()) return '<p>No sheet music found.</p>';
 
-    $output = '';
+    if ($atts['orderby'] === 'program' && count($slugs) === 1 && empty($atts['id'])) {
+        $query->posts = osm_sort_by_program_order($query->posts, $slugs[0]);
+    }
+
+    wp_enqueue_script('osm-frontend');
+
+    // Name used for the "download all parts" zip file.
+    $zip_name = 'Sheet music';
+    if (!empty($atts['id'])) {
+        $zip_name = get_the_title(intval($atts['id']));
+    } elseif ($slugs) {
+        $season_names = [];
+        foreach ($slugs as $slug) {
+            $season_term = get_term_by('slug', $slug, 'season');
+            if ($season_term) $season_names[] = $season_term->name;
+        }
+        if ($season_names) $zip_name = implode(', ', $season_names);
+    }
 
     // INSTRUMENT FILTER FORM
     $instruments = get_terms([
@@ -617,8 +733,21 @@ function osm_shortcode_optimized($atts){
         'hide_empty' => false,
         'orderby'    => 'name',
     ]);
+    if (is_wp_error($instruments)) $instruments = [];
 
-    if($instruments && !is_wp_error($instruments)){
+    // Parent of each instrument, so the front-end script can match parents/children.
+    $instrument_parents = [];
+    foreach ($instruments as $inst) {
+        $instrument_parents[intval($inst->term_id)] = intval($inst->parent);
+    }
+
+    $select_id = 'osm_instrument_filter_' . $instance;
+    $search_id = 'osm_search_' . $instance;
+
+    $form  = '<form method="get" class="osm-filter-form">';
+    $form .= '<div class="osm-filter-selectinstrument">';
+
+    if ($instruments) {
         $tree = [];
         foreach($instruments as $inst){
             $tree[ intval($inst->parent) ][] = $inst;
@@ -648,16 +777,26 @@ function osm_shortcode_optimized($atts){
             return $out;
         };
 
-        $output .= '<form method="get" class="osm-filter-form">';
-        $output .= '<div class="osm-filter-selectinstrument">';
-        $output .= '<label for="osm_instrument_filter">Select Instrument: </label>';
-        $output .= '<select name="osm_instrument_filter" id="osm_instrument_filter">';
-        $output .= '<option value="">All Instruments</option>';
-        $output .= $render_options(0, $tree, $selected_instrument);
-        $output .= '</select> ';
-        $output .= '<button type="submit" class="button">Filter</button>';
-        $output .= '</div></form>';
+        $form .= '<span class="osm-filter-field">';
+        $form .= '<label for="'.esc_attr($select_id).'">Select Instrument: </label>';
+        $form .= '<select name="osm_instrument_filter" id="'.esc_attr($select_id).'" class="osm-instrument-select">';
+        $form .= '<option value="">All Instruments</option>';
+        $form .= $render_options(0, $tree, $selected_instrument);
+        $form .= '</select>';
+        $form .= '</span> ';
     }
+
+    $form .= '<span class="osm-filter-field">';
+    $form .= '<label for="'.esc_attr($search_id).'">Search: </label>';
+    $form .= '<input type="search" name="osm_search" id="'.esc_attr($search_id).'" class="osm-search" value="'.esc_attr($search).'" placeholder="Title or composer" />';
+    $form .= '</span> ';
+    $form .= '<button type="submit" class="button osm-filter-submit">Filter</button>';
+    $form .= '</div>';
+    $form .= '<div class="osm-download-all-wrap">';
+    $form .= '<button type="button" class="button osm-download-all" hidden>Download all parts</button>';
+    $form .= '<span class="osm-download-status" aria-live="polite"></span>';
+    $form .= '</div>';
+    $form .= '</form>';
 
     // Build full instrument ID list (selected + children + parents)
     $instrument_ids = [];
@@ -685,20 +824,22 @@ function osm_shortcode_optimized($atts){
     };
 
     // SHEET MUSIC RECORDS
+    // Everything is rendered; pieces and files outside the current filter are
+    // marked hidden so the front-end script can re-filter without a reload.
+    $pieces = '';
+    $shown_pieces = 0;
+
     while($query->have_posts()){
         $query->the_post();
         $files = get_post_meta(get_the_ID(), 'osm_files', true);
         if(!$files) continue;
 
+        $title    = get_the_title();
         $composer = get_post_meta(get_the_ID(), 'osm_composer', true);
         $notes    = get_post_meta(get_the_ID(), 'osm_notes', true);
         $links    = get_post_meta(get_the_ID(), 'osm_links', true);
         if(!is_array($links)) $links = [];
         $last_updated = get_the_modified_date('F j, Y');
-
-        $output .= '<div class="osm-piece">';
-        $output .= '<h3>'.esc_html(get_the_title()).'</h3>';
-        if($composer) $output .= '<span class="osm-meta-composer">'.esc_html($composer).'</span><br>';
 
         // Group & sort files by instrument order
         $files_grouped = [];
@@ -719,40 +860,56 @@ function osm_shortcode_optimized($atts){
             }
         }
 
-        // Display file buttons
-        $output .= '<div class="osm-file-buttons">';
+        // File buttons
+        $buttons = '';
+        $shown_files = 0;
         foreach($all_files_sorted as $f){
-            if($instrument_ids && !in_array($f['instrument'], $instrument_ids)) continue;
-            $title = $instrument_name($f['instrument']);
             $url = wp_get_attachment_url($f['attachment_id']);
             if(!$url) continue;
-            $output .= '<a href="'.esc_url($url).'" class="button" target="_blank">'.esc_html($title).'</a> ';
+            $shown = !$instrument_ids || in_array($f['instrument'], $instrument_ids);
+            if ($shown) $shown_files++;
+            $buttons .= '<a href="'.esc_url($url).'" class="button osm-file" data-instrument="'.intval($f['instrument']).'" target="_blank"'.($shown ? '' : ' hidden').'>'.esc_html($instrument_name($f['instrument'])).'</a> ';
         }
-        $output .= '</div>';
 
-        if($notes) $output .= '<span class="osm-meta">Notes: '.esc_html($notes).'</span><br>';
+        $matches_search = $search === '' || stripos($title . ' ' . $composer, $search) !== false;
+        $piece_shown = $matches_search && (!$instrument_ids || $shown_files);
+        if ($piece_shown) $shown_pieces++;
+
+        $pieces .= '<div class="osm-piece" data-published="'.intval(get_post_time('U', true)).'" data-modified="'.intval(get_post_modified_time('U', true)).'"'.($piece_shown ? '' : ' hidden').'>';
+        $pieces .= '<h3><span class="osm-piece-title">'.esc_html($title).'</span></h3>';
+        if($composer) $pieces .= '<span class="osm-meta-composer">'.esc_html($composer).'</span><br>';
+
+        $pieces .= '<div class="osm-file-buttons">'.$buttons.'</div>';
+
+        if($notes) $pieces .= '<span class="osm-meta">Notes: '.esc_html($notes).'</span><br>';
 
         if($links){
-            $output .= '<div class="osm-links"><ul class="osm-links-list">';
+            $pieces .= '<div class="osm-links"><ul class="osm-links-list">';
             foreach($links as $link){
                 if(empty($link['url'])) continue;
                 $label = !empty($link['title']) ? $link['title'] : $link['url'];
                 $type  = osm_detect_link_type($link['url']);
                 $icon  = osm_link_icon_svg($type);
-                $output .= '<li>';
-                $output .= '<span class="osm-link-icon">'.$icon.'</span>';
-                $output .= '<a href="'.esc_url($link['url']).'" class="osm-link osm-link-'.esc_attr($type).'" target="_blank" rel="noopener noreferrer">';
-                $output .= '<span class="osm-link-label">'.esc_html($label).'</span>';
-                $output .= '</a></li>';
+                $pieces .= '<li>';
+                $pieces .= '<span class="osm-link-icon">'.$icon.'</span>';
+                $pieces .= '<a href="'.esc_url($link['url']).'" class="osm-link osm-link-'.esc_attr($type).'" target="_blank" rel="noopener noreferrer">';
+                $pieces .= '<span class="osm-link-label">'.esc_html($label).'</span>';
+                $pieces .= '</a></li>';
             }
-            $output .= '</ul></div>';
+            $pieces .= '</ul></div>';
         }
 
-        $output .= '<span class="osm-meta-updated">Updated: '.esc_html($last_updated).'</span><br>';
-        $output .= '</div>';
+        $pieces .= '<span class="osm-meta-updated">Updated: '.esc_html($last_updated).'</span><br>';
+        $pieces .= '</div>';
     }
 
     wp_reset_postdata();
+
+    $output  = '<div class="osm-library" data-instrument-parents="'.esc_attr(wp_json_encode((object) $instrument_parents)).'" data-zip-name="'.esc_attr($zip_name).'">';
+    $output .= $form;
+    $output .= $pieces;
+    $output .= '<p class="osm-no-results"'.($shown_pieces ? ' hidden' : '').'>No pieces match your selection.</p>';
+    $output .= '</div>';
 
     return $output;
 }
@@ -974,8 +1131,9 @@ add_action('enqueue_block_editor_assets', function() {
 function osm_render_library_block($attributes) {
     $piece_id = intval($attributes['pieceId']);
     $output = osm_shortcode_optimized([
-        'id'     => $piece_id,
-        'season' => $piece_id ? '' : $attributes['season'],
+        'id'      => $piece_id,
+        'season'  => $piece_id ? '' : $attributes['season'],
+        'orderby' => $attributes['orderby'],
     ]);
     return '<div ' . get_block_wrapper_attributes() . '>' . $output . '</div>';
 }

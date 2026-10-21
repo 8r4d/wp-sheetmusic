@@ -9,7 +9,8 @@
 	"keywords": [ "sheet music", "library", "season", "orchestra" ],
 	"attributes": {
 		"season": { "type": "string", "default": "" },
-		"pieceId": { "type": "integer", "default": 0 }
+		"pieceId": { "type": "integer", "default": 0 },
+		"orderby": { "type": "string", "default": "program" }
 	},
 	"supports": {
 		"html": false,

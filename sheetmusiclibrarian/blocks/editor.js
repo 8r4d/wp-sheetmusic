@@ -79,7 +79,19 @@
 							onChange: function ( value ) {
 								setAttributes( { season: value } );
 							},
-						} )
+						} ),
+						! attributes.pieceId && parseSeasons( attributes.season ).length === 1 ? el( SelectControl, {
+							label: 'Order',
+							value: attributes.orderby,
+							options: [
+								{ label: 'Program order (set on the season)', value: 'program' },
+								{ label: 'Alphabetical', value: 'title' },
+							],
+							__nextHasNoMarginBottom: true,
+							onChange: function ( value ) {
+								setAttributes( { orderby: value } );
+							},
+						} ) : null
 					)
 				),
 				el( Disabled, null,

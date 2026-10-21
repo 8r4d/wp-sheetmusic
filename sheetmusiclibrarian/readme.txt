@@ -36,6 +36,7 @@ eg.
 whole collection: [sheet_music_library]
 limited to season: [sheet_music_library season="standards"]
 individual piece: [sheet_music_library id="3783"]
+season, alphabetical instead of program order: [sheet_music_library season="standards" orderby="title"]
 collection last updated: [sheet_music_last_updated]
 
 Blocks:
@@ -64,6 +65,13 @@ Sheet Music Last Updated, shows the date the collection on the page last changed
  == Changelog ==
 = 1.2.0 =
 * New Sheet Music Library block (block-editor version of the shortcode).
+* Instrument and search filtering now happen instantly, without reloading the page.
+* Search pieces by title or composer.
+* The member's instrument choice is remembered on their device.
+* Pieces with no part for the chosen instrument are hidden.
+* "New" and "Updated" badges on pieces changed since the member's last visit (or the last 14 days on a first visit).
+* "Download all parts" button saves every part for the chosen instrument as one zip, built in the browser.
+* Program order: drag pieces into concert order on the season's edit screen; a library showing one season uses that order (orderby="title" for alphabetical).
 * New Sheet Music Last Updated block and [sheet_music_last_updated] shortcode showing when the collection on the page last changed.
 * The instrument shortcode attribute now works; the front-end filter no longer uses a nonce, which could expire behind page caching.
 * Fixed PHP warnings when a file's instrument is unassigned or deleted.

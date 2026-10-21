@@ -149,3 +149,57 @@
     font-size: 0.9em;
     color: #555;
 }
+
+/* Filtered-out pieces and files; beats theme .button display rules */
+.osm-library [hidden] {
+    display: none !important;
+}
+
+.osm-filter-selectinstrument {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+}
+
+.osm-filter-form .osm-filter-selectinstrument {
+    margin-bottom: 12px;
+}
+
+.osm-download-all-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 36px;
+}
+
+.osm-download-status {
+    font-size: 0.9em;
+    color: #555;
+}
+
+.osm-badge {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.55em;
+    font-weight: bold;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    vertical-align: middle;
+    color: #fff;
+}
+
+.osm-badge-new {
+    background: #28a745;
+}
+
+.osm-badge-updated {
+    background: #0073aa;
+}
+
+.osm-no-results {
+    color: #555;
+}

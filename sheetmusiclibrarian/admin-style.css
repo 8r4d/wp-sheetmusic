@@ -73,3 +73,23 @@
     border-radius: 3px;
     font-family: monospace;
 }
+
+.osm-program-order {
+    max-width: 600px;
+    margin: 0 0 8px;
+}
+
+.osm-program-order li {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #fafafa;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin-bottom: 6px;
+}
+
+.osm-program-order li.ui-sortable-helper {
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
