@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Sheet Music Librarian
  * Description: Manage and display sheet music pieces with instrument files, composer, season, notes, external links, and last updated info.
- * Version: 1.3.2
+ * Version: 1.3.3
  * Author: Brad Salomons
  * License: GPL2+
  */
@@ -995,6 +995,8 @@ function osm_shortcode_optimized($atts){
             $buttons .= '<a href="'.esc_url($url).'" class="button osm-file" data-instrument="'.intval($f['instrument']).'" data-ext="'.esc_attr($ext ? '.'.$ext : '').'" target="_blank" rel="nofollow"'.($shown ? '' : ' hidden').'>'.esc_html($instrument_name($f['instrument'])).'</a> ';
         }
 
+        if ($buttons === '') continue; // every file was deleted
+
         $matches_search = $search === '' || stripos($title . ' ' . $composer, $search) !== false;
         $piece_shown = $matches_search && (!$instrument_ids || $shown_files);
         if ($piece_shown) $shown_pieces++;
@@ -1295,12 +1297,32 @@ function osm_protect_attachment($attachment_id) {
     return true;
 }
 
-// Remove a protected file's empty subfolder after the attachment is deleted.
+// When a file is deleted from the Media Library, drop it from any piece that
+// used it and remove its (now empty) private subfolder.
 add_action('delete_attachment', function($attachment_id) {
+    $attachment_id = intval($attachment_id);
+
+    $pieces = get_posts([
+        'post_type'      => 'sheet_music',
+        'post_status'    => 'any',
+        'posts_per_page' => -1,
+        'fields'         => 'ids',
+        'meta_key'       => 'osm_files', // phpcs:ignore WordPress.DB.SlowDBQuery
+    ]);
+    foreach ($pieces as $piece_id) {
+        $files = get_post_meta($piece_id, 'osm_files', true);
+        if (!is_array($files)) continue;
+        $kept = array_values(array_filter($files, function($f) use ($attachment_id) {
+            return intval($f['attachment_id']) !== $attachment_id;
+        }));
+        if (count($kept) !== count($files)) update_post_meta($piece_id, 'osm_files', $kept);
+    }
+
+    // WordPress removes the files after this hook and its 'deleted_post' action, so tidy up at the end.
     $file = get_attached_file($attachment_id, true);
     if ($file && osm_is_protected_file($file)) {
         $dir = dirname($file);
-        add_action('deleted_post', function() use ($dir) {
+        add_action('shutdown', function() use ($dir) {
             if (is_dir($dir) && count(scandir($dir)) === 2) rmdir($dir);
         });
     }

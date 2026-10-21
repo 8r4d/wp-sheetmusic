@@ -83,6 +83,7 @@ Sheet Music > File Protection moves your sheet music files into a private folder
 * The plugin now has its own permissions; existing roles keep the same access they had.
 * File protection: sheet music files move to a private folder and are downloaded through expiring links (14-28 days) that only appear on the library page. Old direct addresses, including ones indexed by search engines, stop working.
 * New Sheet Music > File Protection screen to protect existing files in one click and check that the server blocks direct access (with the Nginx rule to add if not).
+* Deleting a file from the Media Library removes it from any piece that used it and cleans up its private folder; pieces with no remaining files are hidden.
 * Files are protected automatically when a piece is saved, and downloads are marked noindex for search engines.
 * Library download links are left out of RSS feeds and anonymous REST API responses; protected files are hidden from the public media API and attachment pages; pages showing a library are not cached.
 = 1.2.0 =
