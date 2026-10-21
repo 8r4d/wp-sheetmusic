@@ -1,0 +1,25 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "sheet-music-librarian/last-updated",
+	"title": "Sheet Music Last Updated",
+	"category": "widgets",
+	"icon": "calendar-alt",
+	"description": "Show when the sheet music collection on this page was last changed. Place it at the top of the page.",
+	"keywords": [ "sheet music", "updated", "date", "modified" ],
+	"attributes": {
+		"matchPage": { "type": "boolean", "default": true },
+		"season": { "type": "string", "default": "" },
+		"label": { "type": "string", "default": "Music library last updated:" }
+	},
+	"usesContext": [ "postId" ],
+	"supports": {
+		"html": false,
+		"align": true,
+		"color": { "text": true, "background": true },
+		"spacing": { "margin": true, "padding": true },
+		"typography": { "fontSize": true }
+	},
+	"editorScript": "osm-blocks-editor",
+	"style": "osm-styles"
+}

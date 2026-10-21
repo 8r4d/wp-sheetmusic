@@ -145,3 +145,7 @@
     height: 100%;
     display: block;
 }
+.osm-last-updated {
+    font-size: 0.9em;
+    color: #555;
+}

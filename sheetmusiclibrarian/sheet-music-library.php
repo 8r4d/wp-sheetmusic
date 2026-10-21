@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Sheet Music Librarian
  * Description: Manage and display sheet music pieces with instrument files, composer, season, notes, external links, and last updated info.
- * Version: 1.1.3
+ * Version: 1.2.0
  * Author: Brad Salomons
  * License: GPL2+
  */
@@ -117,14 +117,17 @@ function osm_add_combined_meta_box() {
 }
 
 add_action('admin_enqueue_scripts', function($hook) {
-    if (in_array($hook, ['post.php', 'post-new.php'])) {
-        $css_file = plugin_dir_path(__FILE__) . 'admin-style.css';
-        $css_url  = plugin_dir_url(__FILE__) . 'admin-style.css';
-        $version  = file_exists($css_file) ? filemtime($css_file) : false;
+    global $post_type;
+    if (!in_array($hook, ['post.php', 'post-new.php']) || $post_type !== 'sheet_music') return;
 
-        wp_enqueue_style('osm-admin-style', $css_url, [], $version);
-        wp_enqueue_media(); 
-    }
+    $css_file = plugin_dir_path(__FILE__) . 'admin-style.css';
+    $css_url  = plugin_dir_url(__FILE__) . 'admin-style.css';
+    $version  = file_exists($css_file) ? filemtime($css_file) : false;
+
+    wp_enqueue_style('osm-admin-style', $css_url, [], $version);
+    wp_enqueue_media();
+    wp_enqueue_script('jquery');
+    wp_enqueue_script('jquery-ui-sortable');
 });
 
 add_action('admin_head', function() {
@@ -135,14 +138,6 @@ add_action('admin_head', function() {
                 $("#instrumentdiv").removeClass("closed").addClass("closed");
             });
         </script>';
-    }
-});
-
-add_action('admin_enqueue_scripts', function($hook) {
-    if (in_array($hook, ['post.php', 'post-new.php'])) {
-        wp_enqueue_media();
-        wp_enqueue_script('jquery');
-        wp_enqueue_script('jquery-ui-sortable');
     }
 });
 
@@ -192,7 +187,6 @@ function osm_render_combined_meta_box($post) {
     wp_nonce_field('osm_save_sheet_combined', 'osm_sheet_combined_nonce');
 
     $composer = get_post_meta($post->ID, 'osm_composer', true);
-    $season   = get_post_meta($post->ID, 'osm_season', true);
     $notes    = get_post_meta($post->ID, 'osm_notes', true);
 
     echo '<p><label>Composer: <input type="text" name="osm_composer" value="'.esc_attr($composer).'" style="width:100%;" /></label></p>';
@@ -306,6 +300,13 @@ function osm_render_combined_meta_box($post) {
     echo '<p><strong>Single piece shortcode:</strong></p>';
     echo '<code>[sheet_music_library id="' . esc_attr($post->ID) . '"]</code>';
     echo '<br><small>Displays this single piece only.</small>';
+
+    // Last updated shortcode
+    echo '<p><strong>Collection last updated:</strong></p>';
+    echo '<code>[sheet_music_last_updated]</code>';
+    echo '<br><small>Shows when the collection(s) on the same page last changed. Place it at the top of the page.</small>';
+
+    echo '<p><small>In the block editor you can also use the <em>Sheet Music Library</em> and <em>Sheet Music Last Updated</em> blocks.</small></p>';
 
     echo '</div>';
 
@@ -457,12 +458,6 @@ function osm_save_sheet_combined($post_id) {
 
     update_post_meta( $post_id, 'osm_links', $clean_links );
 
-    // Save selected seasons (taxonomy terms)
-    if (isset($_POST['osm_season']) && is_array($_POST['osm_season'])) {
-        $season_ids = array_map('intval', wp_unslash($_POST['osm_season']));
-        wp_set_post_terms($post_id, $season_ids, 'season');
-    }
-
     // Handle uploaded files
     $raw_files = []; // default
 
@@ -535,13 +530,40 @@ function osm_link_icon_svg($type) {
     return isset($icons[$type]) ? $icons[$type] : $icons['generic'];
 }
 
-add_action('wp_enqueue_scripts', function(){
+add_action('init', function(){
     $css_file = plugin_dir_path(__FILE__) . 'style.css';
     $css_url  = plugin_dir_url(__FILE__) . 'style.css';
     $version  = file_exists($css_file) ? filemtime($css_file) : false;
 
-    wp_enqueue_style('osm-styles', $css_url, [], $version);
+    wp_register_style('osm-styles', $css_url, [], $version);
+}, 9);
+
+add_action('wp_enqueue_scripts', function(){
+    wp_enqueue_style('osm-styles');
 });
+
+// Split a comma-separated season attribute into clean slugs.
+function osm_parse_season_slugs($season) {
+    if (empty($season)) return [];
+    return array_values(array_filter(array_map('sanitize_title', explode(',', $season))));
+}
+
+// IDs of every piece in any of the given seasons (empty array if none).
+function osm_get_season_post_ids($slugs) {
+    $season_post_ids = [];
+
+    foreach ($slugs as $slug) {
+        $season_term = get_term_by('slug', $slug, 'season');
+        if ($season_term) {
+            $linked_post_ids = get_objects_in_term($season_term->term_id, 'season');
+            if (!is_wp_error($linked_post_ids) && !empty($linked_post_ids)) {
+                $season_post_ids = array_merge($season_post_ids, $linked_post_ids);
+            }
+        }
+    }
+
+    return array_unique(array_map('intval', $season_post_ids));
+}
 
 add_shortcode('sheet_music_library','osm_shortcode_optimized');
 function osm_shortcode_optimized($atts){
@@ -551,8 +573,11 @@ function osm_shortcode_optimized($atts){
         'season'     => '',  // optional season filter by slug
     ], $atts, 'sheet_music_library');
 
-    $selected_instrument = isset($_GET['osm_instrument_filter']) 
-        ? intval($_GET['osm_instrument_filter']) 
+    // The instrument filter is a plain read-only GET filter, so no nonce is needed
+    // (a nonce here goes stale behind page caching and silently breaks the filter).
+    // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+    $selected_instrument = isset($_GET['osm_instrument_filter'])
+        ? intval(wp_unslash($_GET['osm_instrument_filter'])) // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         : intval($atts['instrument']);
 
     $args = [
@@ -569,21 +594,9 @@ function osm_shortcode_optimized($atts){
     }
 
     // Filter by season using a meta/post workaround (avoids tax_query)
-    if ( ! empty( $atts['season'] ) ) {
-        $slugs = array_map( 'sanitize_title', explode( ',', $atts['season'] ) );
-        $season_post_ids = [];
-
-        foreach ( $slugs as $slug ) {
-            $season_term = get_term_by( 'slug', $slug, 'season' );
-            if ( $season_term ) {
-                $linked_post_ids = get_objects_in_term( $season_term->term_id, 'season' );
-                if ( ! is_wp_error( $linked_post_ids ) && ! empty( $linked_post_ids ) ) {
-                    $season_post_ids = array_merge( $season_post_ids, $linked_post_ids );
-                }
-            }
-        }
-
-        $season_post_ids = array_unique( $season_post_ids );
+    $slugs = osm_parse_season_slugs($atts['season']);
+    if ($slugs) {
+        $season_post_ids = osm_get_season_post_ids($slugs);
 
         if ( ! empty( $season_post_ids ) ) {
             $args['post__in'] = $season_post_ids;
@@ -598,11 +611,11 @@ function osm_shortcode_optimized($atts){
 
     $output = '';
 
-    // INSTRUMENT FILTER FORM 
+    // INSTRUMENT FILTER FORM
     $instruments = get_terms([
         'taxonomy'   => 'instrument',
         'hide_empty' => false,
-        'orderby'    => 'term_order',
+        'orderby'    => 'name',
     ]);
 
     if($instruments && !is_wp_error($instruments)){
@@ -635,38 +648,15 @@ function osm_shortcode_optimized($atts){
             return $out;
         };
 
-        // Create a nonce for this filter form
-
-        $instrument_raw = isset($_GET['osm_instrument_filter'])
-            ? intval( wp_unslash($_GET['osm_instrument_filter']) )
-            : 0;
-
-        // Create the filter form
-        $filter_nonce = wp_create_nonce('osm_instrument_filter');
-
         $output .= '<form method="get" class="osm-filter-form">';
         $output .= '<div class="osm-filter-selectinstrument">';
         $output .= '<label for="osm_instrument_filter">Select Instrument: </label>';
         $output .= '<select name="osm_instrument_filter" id="osm_instrument_filter">';
         $output .= '<option value="">All Instruments</option>';
-        $output .= $render_options(0, $tree, $instrument_raw);
+        $output .= $render_options(0, $tree, $selected_instrument);
         $output .= '</select> ';
-        $output .= '<input type="hidden" name="osm_instrument_filter_nonce" value="'.esc_attr($filter_nonce).'" />';
         $output .= '<button type="submit" class="button">Filter</button>';
         $output .= '</div></form>';
-
-        // Verify the nonce *only if it exists* (skips strict check on first load)
-        $nonce_raw = isset($_GET['osm_instrument_filter_nonce'])
-            ? sanitize_text_field( wp_unslash($_GET['osm_instrument_filter_nonce']) )
-            : '';
-
-        if ( empty($nonce_raw) || wp_verify_nonce( $nonce_raw, 'osm_instrument_filter' ) ) {
-            // allow filter if nonce missing (first load) OR valid
-            $selected_instrument = $instrument_raw;
-        } else {
-            $selected_instrument = 0; // invalid nonce
-        }
-
     }
 
     // Build full instrument ID list (selected + children + parents)
@@ -680,15 +670,21 @@ function osm_shortcode_optimized($atts){
 
         // Correct parent loop
         $term = get_term($selected_instrument, 'instrument');
-        $parent_id = $term ? intval($term->parent) : 0;
+        $parent_id = ($term && !is_wp_error($term)) ? intval($term->parent) : 0;
         while($parent_id){
             $instrument_ids[] = $parent_id;
             $term = get_term($parent_id, 'instrument');
-            $parent_id = $term ? intval($term->parent) : 0;
+            $parent_id = ($term && !is_wp_error($term)) ? intval($term->parent) : 0;
         }
     }
 
-    // SHEET MUSIC RECORDS 
+    // Instrument name for a file, or 'Misc' when unassigned or the term was deleted.
+    $instrument_name = function($term_id) {
+        $term = $term_id ? get_term($term_id, 'instrument') : null;
+        return ($term && !is_wp_error($term)) ? $term->name : 'Misc';
+    };
+
+    // SHEET MUSIC RECORDS
     while($query->have_posts()){
         $query->the_post();
         $files = get_post_meta(get_the_ID(), 'osm_files', true);
@@ -698,22 +694,20 @@ function osm_shortcode_optimized($atts){
         $notes    = get_post_meta(get_the_ID(), 'osm_notes', true);
         $links    = get_post_meta(get_the_ID(), 'osm_links', true);
         if(!is_array($links)) $links = [];
-        $last_updated = get_post_modified_time('F j, Y', true, get_the_ID());
+        $last_updated = get_the_modified_date('F j, Y');
 
         $output .= '<div class="osm-piece">';
-        $output .= '<h3>'.get_the_title().'</h3>';
+        $output .= '<h3>'.esc_html(get_the_title()).'</h3>';
         if($composer) $output .= '<span class="osm-meta-composer">'.esc_html($composer).'</span><br>';
 
         // Group & sort files by instrument order
         $files_grouped = [];
         foreach($files as $f) $files_grouped[$f['instrument']][] = $f;
-        uasort($files_grouped, function($a, $b){
+        uasort($files_grouped, function($a, $b) use ($instrument_name){
             $order_a = intval(get_term_meta($a[0]['instrument'], 'instrument_order', true));
             $order_b = intval(get_term_meta($b[0]['instrument'], 'instrument_order', true));
             if($order_a === $order_b){
-                $term_a = get_term($a[0]['instrument'], 'instrument');
-                $term_b = get_term($b[0]['instrument'], 'instrument');
-                return strcasecmp($term_a->name, $term_b->name);
+                return strcasecmp($instrument_name($a[0]['instrument']), $instrument_name($b[0]['instrument']));
             }
             return $order_a - $order_b;
         });
@@ -729,8 +723,7 @@ function osm_shortcode_optimized($atts){
         $output .= '<div class="osm-file-buttons">';
         foreach($all_files_sorted as $f){
             if($instrument_ids && !in_array($f['instrument'], $instrument_ids)) continue;
-            $term = $f['instrument'] ? get_term($f['instrument'], 'instrument') : null;
-            $title = $term ? $term->name : 'Misc';
+            $title = $instrument_name($f['instrument']);
             $url = wp_get_attachment_url($f['attachment_id']);
             if(!$url) continue;
             $output .= '<a href="'.esc_url($url).'" class="button" target="_blank">'.esc_html($title).'</a> ';
@@ -762,4 +755,240 @@ function osm_shortcode_optimized($atts){
     wp_reset_postdata();
 
     return $output;
+}
+
+//////////////////////////////
+// COLLECTION LAST UPDATED
+//////////////////////////////
+
+// Editing a piece doesn't change the modified date of the page showing it, and
+// removing a piece from a collection doesn't touch any remaining piece. So we
+// record our own "last changed" timestamps: one for the whole library (option)
+// and one per season (term meta), bumped whenever a published piece changes.
+
+function osm_touch_collection($post_id, $season_term_ids = null) {
+    $now = time();
+    update_option('osm_library_last_updated', $now, false);
+
+    if ($season_term_ids === null) {
+        $season_term_ids = wp_get_object_terms($post_id, 'season', ['fields' => 'ids']);
+    }
+    if (is_wp_error($season_term_ids)) return;
+
+    foreach ($season_term_ids as $term_id) {
+        update_term_meta(intval($term_id), 'osm_last_updated', $now);
+    }
+}
+
+// Published, edited, unpublished or trashed.
+add_action('transition_post_status', function($new_status, $old_status, $post) {
+    if ($post->post_type !== 'sheet_music') return;
+    if ($new_status !== 'publish' && $old_status !== 'publish') return;
+    osm_touch_collection($post->ID);
+}, 10, 3);
+
+// Seasons added to / removed from a published piece: both sides changed.
+add_action('set_object_terms', function($object_id, $terms, $tt_ids, $taxonomy, $append, $old_tt_ids) {
+    if ($taxonomy !== 'season') return;
+    if (get_post_type($object_id) !== 'sheet_music' || get_post_status($object_id) !== 'publish') return;
+
+    $changed_tt_ids = array_merge(array_diff($tt_ids, $old_tt_ids), array_diff($old_tt_ids, $tt_ids));
+    if (!$changed_tt_ids) return;
+
+    $term_ids = get_terms([
+        'taxonomy'         => 'season',
+        'term_taxonomy_id' => array_map('intval', $changed_tt_ids),
+        'hide_empty'       => false,
+        'fields'           => 'ids',
+    ]);
+    osm_touch_collection($object_id, $term_ids);
+}, 10, 6);
+
+// Permanently deleted while still published (skipping the trash).
+add_action('before_delete_post', function($post_id) {
+    if (get_post_type($post_id) === 'sheet_music' && get_post_status($post_id) === 'publish') {
+        osm_touch_collection($post_id);
+    }
+});
+
+// Unix timestamp of the last change to a collection, or 0 if it has none.
+// $season is a comma-separated slug list (empty = whole library); $id is a single piece.
+function osm_get_collection_last_updated($season = '', $id = 0) {
+    $id = intval($id);
+    if ($id) {
+        return get_post_status($id) === 'publish' ? intval(get_post_modified_time('U', true, $id)) : 0;
+    }
+
+    $stamps = [0];
+    $query_args = [
+        'post_type'      => 'sheet_music',
+        'post_status'    => 'publish',
+        'posts_per_page' => 1,
+        'orderby'        => 'modified',
+        'order'          => 'DESC',
+        'fields'         => 'ids',
+        'no_found_rows'  => true,
+    ];
+
+    $slugs = osm_parse_season_slugs($season);
+    if ($slugs) {
+        foreach ($slugs as $slug) {
+            $term = get_term_by('slug', $slug, 'season');
+            if ($term) $stamps[] = intval(get_term_meta($term->term_id, 'osm_last_updated', true));
+        }
+        $post_ids = osm_get_season_post_ids($slugs);
+        if (!$post_ids) return max($stamps);
+        $query_args['post__in'] = $post_ids;
+    } else {
+        $stamps[] = intval(get_option('osm_library_last_updated', 0));
+    }
+
+    // Fallback for pieces saved before timestamps were tracked.
+    $latest = get_posts($query_args);
+    if ($latest) $stamps[] = intval(get_post_modified_time('U', true, $latest[0]));
+
+    return max($stamps);
+}
+
+// Every collection (block or shortcode) embedded in a piece of content.
+function osm_find_collections_in_content($content) {
+    $collections = [];
+
+    if (has_blocks($content)) {
+        $walk = function($blocks) use (&$walk, &$collections) {
+            foreach ($blocks as $block) {
+                if ($block['blockName'] === 'sheet-music-librarian/library') {
+                    $collections[] = [
+                        'season' => isset($block['attrs']['season']) ? $block['attrs']['season'] : '',
+                        'id'     => isset($block['attrs']['pieceId']) ? $block['attrs']['pieceId'] : 0,
+                    ];
+                }
+                if (!empty($block['innerBlocks'])) $walk($block['innerBlocks']);
+            }
+        };
+        $walk(parse_blocks($content));
+    }
+
+    if (has_shortcode($content, 'sheet_music_library')) {
+        preg_match_all('/' . get_shortcode_regex(['sheet_music_library']) . '/', $content, $matches, PREG_SET_ORDER);
+        foreach ($matches as $m) {
+            if ($m[1] === '[' && $m[6] === ']') continue; // escaped [[shortcode]]
+            $atts = shortcode_parse_atts($m[3]);
+            if (!is_array($atts)) $atts = [];
+            $collections[] = [
+                'season' => isset($atts['season']) ? $atts['season'] : '',
+                'id'     => isset($atts['id']) ? $atts['id'] : 0,
+            ];
+        }
+    }
+
+    return $collections;
+}
+
+// Markup for the "last updated" notice. With $match_page, it uses the
+// collections found on $post_id (falling back to the whole library if none).
+function osm_render_last_updated($match_page, $season, $label, $post_id, $wrapper_attributes = 'class="osm-last-updated"') {
+    $collections = [['season' => $season, 'id' => 0]];
+
+    if ($match_page) {
+        $post = $post_id ? get_post($post_id) : null;
+        $found = $post ? osm_find_collections_in_content($post->post_content) : [];
+        if ($found) $collections = $found;
+    }
+
+    $timestamp = 0;
+    foreach ($collections as $c) {
+        $timestamp = max($timestamp, osm_get_collection_last_updated($c['season'], $c['id']));
+    }
+    if (!$timestamp) return '';
+
+    return sprintf(
+        '<p %s>%s <time datetime="%s">%s</time></p>',
+        $wrapper_attributes,
+        esc_html($label),
+        esc_attr(wp_date('c', $timestamp)),
+        esc_html(wp_date(get_option('date_format'), $timestamp))
+    );
+}
+
+function osm_current_post_id() {
+    return is_singular() ? get_queried_object_id() : get_the_ID();
+}
+
+add_shortcode('sheet_music_last_updated', 'osm_last_updated_shortcode');
+function osm_last_updated_shortcode($atts) {
+    $atts = shortcode_atts([
+        'season' => '',  // empty = match the collections on this page
+        'label'  => 'Music library last updated:',
+    ], $atts, 'sheet_music_last_updated');
+
+    return osm_render_last_updated(empty($atts['season']), $atts['season'], $atts['label'], osm_current_post_id());
+}
+
+//////////////////////////////
+// BLOCKS
+//////////////////////////////
+
+add_action('init', 'osm_register_blocks');
+function osm_register_blocks() {
+    $js_file = plugin_dir_path(__FILE__) . 'blocks/editor.js';
+    wp_register_script(
+        'osm-blocks-editor',
+        plugin_dir_url(__FILE__) . 'blocks/editor.js',
+        ['wp-blocks', 'wp-block-editor', 'wp-components', 'wp-data', 'wp-element', 'wp-server-side-render'],
+        file_exists($js_file) ? filemtime($js_file) : false,
+        true
+    );
+
+    register_block_type(plugin_dir_path(__FILE__) . 'blocks/library', [
+        'render_callback' => 'osm_render_library_block',
+    ]);
+    register_block_type(plugin_dir_path(__FILE__) . 'blocks/last-updated', [
+        'render_callback' => 'osm_render_last_updated_block',
+    ]);
+}
+
+// Seasons and pieces for the block editor's dropdowns.
+add_action('enqueue_block_editor_assets', function() {
+    $seasons = get_terms(['taxonomy' => 'season', 'hide_empty' => false]);
+    $pieces  = get_posts([
+        'post_type'      => 'sheet_music',
+        'post_status'    => 'publish',
+        'posts_per_page' => -1,
+        'orderby'        => 'title',
+        'order'          => 'ASC',
+    ]);
+
+    $data = [
+        'seasons' => is_wp_error($seasons) ? [] : array_map(function($t) {
+            return ['slug' => $t->slug, 'name' => $t->name];
+        }, $seasons),
+        'pieces'  => array_map(function($p) {
+            return ['id' => $p->ID, 'title' => $p->post_title];
+        }, $pieces),
+    ];
+
+    wp_add_inline_script('osm-blocks-editor', 'window.osmBlockData = ' . wp_json_encode($data) . ';', 'before');
+});
+
+function osm_render_library_block($attributes) {
+    $piece_id = intval($attributes['pieceId']);
+    $output = osm_shortcode_optimized([
+        'id'     => $piece_id,
+        'season' => $piece_id ? '' : $attributes['season'],
+    ]);
+    return '<div ' . get_block_wrapper_attributes() . '>' . $output . '</div>';
+}
+
+function osm_render_last_updated_block($attributes, $content, $block) {
+    $post_id = !empty($block->context['postId']) ? $block->context['postId'] : osm_current_post_id();
+
+    return osm_render_last_updated(
+        !empty($attributes['matchPage']),
+        $attributes['season'],
+        $attributes['label'],
+        $post_id,
+        // The editor preview already wraps this in the block's own wrapper.
+        wp_is_serving_rest_request() ? 'class="osm-last-updated"' : get_block_wrapper_attributes(['class' => 'osm-last-updated'])
+    );
 }

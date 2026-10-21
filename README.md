@@ -34,6 +34,14 @@ limited to season: [sheet_music_library season="standards"]
 
 individual piece: [sheet_music_library id="3783"]
 
+collection last updated: [sheet_music_last_updated]
+
+**Blocks:**
+
+_Sheet Music Library_, the block version of the shortcode. Pick seasons or a single piece in the block sidebar.
+
+_Sheet Music Last Updated_, shows when the collection on the page last changed. Editing a piece doesn't change the page's modified date, so put this at the top of the page. By default it follows the collections on the same page; you can pick seasons instead.
+
 # General Usage
 
 **To show all seasons:**
@@ -51,3 +59,9 @@ _Single piece:_
 [sheet_music_library id="3108"]
 
 
+
+**Show when the collection was last updated (put at the top of the page):**
+
+[sheet_music_last_updated]
+
+_Options:_ season="christmas" to track a specific season, label="Updated:" to change the text.

@@ -1,0 +1,20 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "sheet-music-librarian/library",
+	"title": "Sheet Music Library",
+	"category": "widgets",
+	"icon": "media-document",
+	"description": "Display the sheet music collection, a season, or a single piece, with the instrument filter.",
+	"keywords": [ "sheet music", "library", "season", "orchestra" ],
+	"attributes": {
+		"season": { "type": "string", "default": "" },
+		"pieceId": { "type": "integer", "default": 0 }
+	},
+	"supports": {
+		"html": false,
+		"align": [ "wide", "full" ]
+	},
+	"editorScript": "osm-blocks-editor",
+	"style": "osm-styles"
+}

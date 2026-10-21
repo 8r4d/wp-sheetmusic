@@ -4,7 +4,7 @@ Donate link: https://8r4d.com/plugins/
 Tags: sheet music, pdf, library, orchestra, band 
 Requires at least: 6.8
 Tested up to: 6.8
-Stable tag: 1.1.3
+Stable tag: 1.2.0
 License: GNU General Public License v2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -36,6 +36,13 @@ eg.
 whole collection: [sheet_music_library]
 limited to season: [sheet_music_library season="standards"]
 individual piece: [sheet_music_library id="3783"]
+collection last updated: [sheet_music_last_updated]
+
+Blocks:
+
+Sheet Music Library, the block version of [sheet_music_library]. Pick seasons or a single piece in the block sidebar.
+
+Sheet Music Last Updated, shows the date the collection on the page last changed (a piece added, edited, removed or moved between seasons). Editing a piece doesn't change the page's own modified date, so put this block (or the [sheet_music_last_updated] shortcode) at the top of the page. By default it follows the collections on the same page; you can instead pick seasons in the block sidebar, or use [sheet_music_last_updated season="christmas"] and label="Updated:".
 
 == Installation ==
 
@@ -55,6 +62,13 @@ individual piece: [sheet_music_library id="3783"]
 
 
  == Changelog ==
+= 1.2.0 =
+* New Sheet Music Library block (block-editor version of the shortcode).
+* New Sheet Music Last Updated block and [sheet_music_last_updated] shortcode showing when the collection on the page last changed.
+* The instrument shortcode attribute now works; the front-end filter no longer uses a nonce, which could expire behind page caching.
+* Fixed PHP warnings when a file's instrument is unassigned or deleted.
+* Piece "Updated" dates now use the site's timezone.
+* Editor scripts and styles only load on Sheet Music screens.
 = 1.1.3 =
 * Added a Wikipedia icon for external links pointing to wikipedia.org.
 
