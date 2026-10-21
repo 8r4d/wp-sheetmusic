@@ -8,7 +8,7 @@ Simplifies creation of content types and taxonomies to create and organize sheet
 
 A sheet music manager for the orchestra website. 
 
-_**Note:** This plugin does not provide security or block access to copyrighted materials. It is meant to be used on a page with restricted access to users with permission or rights to access materials. Please use a WordPress page or plugin that controls viewing of a page or post in conjunction with this plugin._
+_**Note:** Protect the library page itself with a page-protection plugin (we use Passster). This plugin then protects the files: under **Sheet Music > File Protection** they move to a private folder and are only downloadable through expiring links that appear on that page, so old, shared or search-indexed file links stop working._
 
 As the volunteer in charge of managing our online member music library where musicians can download their sheet music, it's a chore keeping things organized all season. I built this plugin to simplify the task. 
 

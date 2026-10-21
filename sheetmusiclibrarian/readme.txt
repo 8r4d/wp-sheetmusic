@@ -4,7 +4,7 @@ Donate link: https://8r4d.com/plugins/
 Tags: sheet music, pdf, library, orchestra, band 
 Requires at least: 6.8
 Tested up to: 6.8
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 License: GNU General Public License v2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -45,6 +45,10 @@ Sheet Music Library, the block version of [sheet_music_library]. Pick seasons or
 
 Sheet Music Last Updated, shows the date the collection on the page last changed (a piece added, edited, removed or moved between seasons). Editing a piece doesn't change the page's own modified date, so put this block (or the [sheet_music_last_updated] shortcode) at the top of the page. By default it follows the collections on the same page; you can instead pick seasons in the block sidebar, or use [sheet_music_last_updated season="christmas"] and label="Updated:".
 
+File protection:
+
+Sheet Music > File Protection moves your sheet music files into a private folder. Members download them through links that only appear on your library page and expire after a few weeks, so files can't be opened from old, shared or search-engine links. Protect the page itself with your usual page-protection plugin (eg. Passster); this plugin protects the files.
+
 == Installation ==
 
 **Automatic**
@@ -63,8 +67,7 @@ Sheet Music Last Updated, shows the date the collection on the page last changed
 
 
  == Changelog ==
-= 1.2.0 =
-* New Sheet Music Library block (block-editor version of the shortcode).
+= 1.3.0 =
 * Instrument and search filtering now happen instantly, without reloading the page.
 * Search pieces by title or composer.
 * The member's instrument choice is remembered on their device.
@@ -72,6 +75,12 @@ Sheet Music Last Updated, shows the date the collection on the page last changed
 * "New" and "Updated" badges on pieces changed since the member's last visit (or the last 14 days on a first visit).
 * "Download all parts" button saves every part for the chosen instrument as one zip, built in the browser.
 * Program order: drag pieces into concert order on the season's edit screen; a library showing one season uses that order (orderby="title" for alphabetical).
+* File protection: sheet music files move to a private folder and are downloaded through expiring links (14-28 days) that only appear on the library page. Old direct addresses, including ones indexed by search engines, stop working.
+* New Sheet Music > File Protection screen to protect existing files in one click and check that the server blocks direct access (with the Nginx rule to add if not).
+* Files are protected automatically when a piece is saved, and downloads are marked noindex for search engines.
+* Library download links are left out of RSS feeds and anonymous REST API responses; protected files are hidden from the public media API and attachment pages; pages showing a library are not cached.
+= 1.2.0 =
+* New Sheet Music Library block (block-editor version of the shortcode).
 * New Sheet Music Last Updated block and [sheet_music_last_updated] shortcode showing when the collection on the page last changed.
 * The instrument shortcode attribute now works; the front-end filter no longer uses a nonce, which could expire behind page caching.
 * Fixed PHP warnings when a file's instrument is unassigned or deleted.

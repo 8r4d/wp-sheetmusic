@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Sheet Music Librarian
  * Description: Manage and display sheet music pieces with instrument files, composer, season, notes, external links, and last updated info.
- * Version: 1.3.0
+ * Version: 1.3.1
  * Author: Brad Salomons
  * License: GPL2+
  */
@@ -543,6 +543,11 @@ function osm_save_sheet_combined($post_id) {
 
     update_post_meta( $post_id, 'osm_files', $clean_files );
 
+    // Move this piece's files into the private folder.
+    foreach ( $clean_files as $f ) {
+        osm_protect_attachment( $f['attachment_id'] );
+    }
+
     }
 
 
@@ -705,6 +710,12 @@ function osm_shortcode_optimized($atts){
         }
     }
 
+    // Download links only go out on real page views, never in feeds or to
+    // anonymous REST API readers (which can bypass page-protection plugins).
+    if (!osm_download_links_allowed()) {
+        return '<p>Sheet music is available on the website.</p>';
+    }
+
     $query = new WP_Query($args);
     if (!$query->have_posts()) return '<p>No sheet music found.</p>';
 
@@ -864,11 +875,13 @@ function osm_shortcode_optimized($atts){
         $buttons = '';
         $shown_files = 0;
         foreach($all_files_sorted as $f){
-            $url = wp_get_attachment_url($f['attachment_id']);
-            if(!$url) continue;
+            $path = get_attached_file($f['attachment_id']);
+            if(!$path) continue;
+            $url = osm_file_url($f['attachment_id']);
+            $ext = pathinfo($path, PATHINFO_EXTENSION);
             $shown = !$instrument_ids || in_array($f['instrument'], $instrument_ids);
             if ($shown) $shown_files++;
-            $buttons .= '<a href="'.esc_url($url).'" class="button osm-file" data-instrument="'.intval($f['instrument']).'" target="_blank"'.($shown ? '' : ' hidden').'>'.esc_html($instrument_name($f['instrument'])).'</a> ';
+            $buttons .= '<a href="'.esc_url($url).'" class="button osm-file" data-instrument="'.intval($f['instrument']).'" data-ext="'.esc_attr($ext ? '.'.$ext : '').'" target="_blank" rel="nofollow"'.($shown ? '' : ' hidden').'>'.esc_html($instrument_name($f['instrument'])).'</a> ';
         }
 
         $matches_search = $search === '' || stripos($title . ' ' . $composer, $search) !== false;
@@ -1081,6 +1094,390 @@ function osm_last_updated_shortcode($atts) {
 
     return osm_render_last_updated(empty($atts['season']), $atts['season'], $atts['label'], osm_current_post_id());
 }
+
+//////////////////////////////
+// FILE PROTECTION
+//////////////////////////////
+
+// Sheet music files live in a private uploads folder (one unguessable
+// subfolder per file) and are only served through expiring, signed links that
+// appear on the library page. Page access itself is left to whatever protects
+// the page (e.g. a password plugin): only people who can see the page get links.
+
+define('OSM_LINK_WINDOW', 14 * DAY_IN_SECONDS); // links last 14-28 days
+
+// phpcs:disable WordPress.WP.AlternativeFunctions -- direct file moves inside uploads
+
+function osm_private_dir() {
+    $uploads = wp_upload_dir(null, false);
+    return [
+        'path' => wp_normalize_path(trailingslashit($uploads['basedir']) . 'sheet-music-private'),
+        'url'  => trailingslashit($uploads['baseurl']) . 'sheet-music-private',
+    ];
+}
+
+function osm_ensure_private_dir() {
+    $dir = osm_private_dir()['path'];
+    if (!wp_mkdir_p($dir)) return false;
+
+    $files = [
+        '.htaccess' => "# Sheet Music Librarian: files are served through the plugin, never directly.\n"
+            . "<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>\n"
+            . "<IfModule !mod_authz_core.c>\n    Order allow,deny\n    Deny from all\n</IfModule>\n",
+        'web.config' => "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<configuration><system.webServer><authorization><deny users=\"*\" /></authorization></system.webServer></configuration>\n",
+        'index.php' => "<?php\n// Silence is golden.\n",
+        'osm-access-test.txt' => 'osm-access-test',
+    ];
+    foreach ($files as $name => $contents) {
+        if (!file_exists("$dir/$name")) file_put_contents("$dir/$name", $contents);
+    }
+    return true;
+}
+
+function osm_is_protected_file($path) {
+    return strpos(wp_normalize_path($path), osm_private_dir()['path'] . '/') === 0;
+}
+
+// Move an attachment (and any generated preview images) into its own private
+// subfolder. Returns true if the file is protected afterwards.
+function osm_protect_attachment($attachment_id) {
+    $attachment_id = intval($attachment_id);
+    $file = $attachment_id ? get_attached_file($attachment_id, true) : '';
+    if (!$file || !file_exists($file)) return false;
+
+    if (osm_is_protected_file($file)) {
+        update_post_meta($attachment_id, '_osm_protected', 1);
+        return true;
+    }
+    if (!osm_ensure_private_dir()) return false;
+
+    $new_dir = osm_private_dir()['path'] . '/' . bin2hex(random_bytes(12));
+    if (!wp_mkdir_p($new_dir)) return false;
+
+    $old_dir  = dirname($file);
+    $new_file = $new_dir . '/' . basename($file);
+    if (!rename($file, $new_file)) {
+        rmdir($new_dir);
+        return false;
+    }
+
+    // Generated sizes (PDF previews, image thumbnails) sit beside the original.
+    $meta = wp_get_attachment_metadata($attachment_id);
+    if (is_array($meta)) {
+        $extra = !empty($meta['original_image']) ? [$meta['original_image']] : [];
+        if (!empty($meta['sizes']) && is_array($meta['sizes'])) {
+            foreach ($meta['sizes'] as $size) {
+                if (!empty($size['file'])) $extra[] = $size['file'];
+            }
+        }
+        foreach (array_unique(array_map('basename', $extra)) as $name) {
+            if (file_exists("$old_dir/$name")) rename("$old_dir/$name", "$new_dir/$name");
+        }
+        if (!empty($meta['file'])) {
+            $meta['file'] = _wp_relative_upload_path($new_file);
+            wp_update_attachment_metadata($attachment_id, $meta);
+        }
+    }
+
+    update_attached_file($attachment_id, $new_file);
+    update_post_meta($attachment_id, '_osm_protected', 1);
+    return true;
+}
+
+// Remove a protected file's empty subfolder after the attachment is deleted.
+add_action('delete_attachment', function($attachment_id) {
+    $file = get_attached_file($attachment_id, true);
+    if ($file && osm_is_protected_file($file)) {
+        $dir = dirname($file);
+        add_action('deleted_post', function() use ($dir) {
+            if (is_dir($dir) && count(scandir($dir)) === 2) rmdir($dir);
+        });
+    }
+});
+
+// phpcs:enable WordPress.WP.AlternativeFunctions
+
+// Every attachment used by any sheet music piece.
+function osm_all_sheet_music_attachment_ids() {
+    $ids = [];
+    $piece_ids = get_posts([
+        'post_type'      => 'sheet_music',
+        'post_status'    => 'any',
+        'posts_per_page' => -1,
+        'fields'         => 'ids',
+    ]);
+    foreach ($piece_ids as $piece_id) {
+        $files = get_post_meta($piece_id, 'osm_files', true);
+        if (!is_array($files)) continue;
+        foreach ($files as $f) {
+            if (!empty($f['attachment_id'])) $ids[] = intval($f['attachment_id']);
+        }
+    }
+    return array_values(array_unique($ids));
+}
+
+// Signed links.
+
+function osm_file_signature($attachment_id, $expires) {
+    return substr(hash_hmac('sha256', intval($attachment_id) . '|' . intval($expires), wp_salt('auth') . 'osm_file'), 0, 32);
+}
+
+// Expiry is rounded to the window so a page's links stay identical for days
+// at a time (friendly to caches) and always last at least one full window.
+function osm_file_url($attachment_id) {
+    $expires = (intdiv(time(), OSM_LINK_WINDOW) + 2) * OSM_LINK_WINDOW;
+    return add_query_arg([
+        'osm_file'    => intval($attachment_id),
+        'osm_expires' => $expires,
+        'osm_sig'     => osm_file_signature($attachment_id, $expires),
+    ], home_url('/'));
+}
+
+function osm_download_links_allowed() {
+    if (is_feed()) return false;
+    if (wp_is_serving_rest_request() && !current_user_can('edit_posts')) return false;
+    return true;
+}
+
+add_action('init', 'osm_serve_file', 99);
+function osm_serve_file() {
+    // Signed links carry their own authorization, so no nonce.
+    // phpcs:disable WordPress.Security.NonceVerification.Recommended
+    if (!isset($_GET['osm_file'])) return;
+
+    $attachment_id = absint(wp_unslash($_GET['osm_file']));
+    $expires       = isset($_GET['osm_expires']) ? absint(wp_unslash($_GET['osm_expires'])) : 0;
+    $signature     = isset($_GET['osm_sig']) ? sanitize_text_field(wp_unslash($_GET['osm_sig'])) : '';
+    // phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+    header('X-Robots-Tag: noindex, nofollow, noarchive');
+
+    if (!$attachment_id || $expires < time() || !hash_equals(osm_file_signature($attachment_id, $expires), $signature)) {
+        wp_die(
+            'This download link has expired. Please go back to the music library page and download the file again.',
+            'Link expired',
+            ['response' => 403]
+        );
+    }
+
+    $file = get_post_type($attachment_id) === 'attachment' ? get_attached_file($attachment_id) : '';
+    if (!$file || !is_readable($file)) {
+        wp_die('Sorry, this file could not be found.', 'File not found', ['response' => 404]);
+    }
+
+    // Only show safe types inline; anything else downloads.
+    $type   = get_post_mime_type($attachment_id) ?: 'application/octet-stream';
+    $inline = preg_match('#^(application/pdf|image/(jpeg|png|gif|webp)|audio/)#', $type);
+    $name   = basename($file);
+
+    while (ob_get_level()) ob_end_clean();
+    nocache_headers();
+    header('Cache-Control: private, max-age=3600');
+    header('Content-Type: ' . $type);
+    header('Content-Length: ' . filesize($file));
+    header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . '; filename="' . str_replace(['"', "\r", "\n"], '', $name) . '"; filename*=UTF-8\'\'' . rawurlencode($name));
+    header('X-Content-Type-Options: nosniff');
+
+    if (!isset($_SERVER['REQUEST_METHOD']) || $_SERVER['REQUEST_METHOD'] !== 'HEAD') {
+        readfile($file); // phpcs:ignore WordPress.WP.AlternativeFunctions
+    }
+    exit;
+}
+
+// Close side doors to protected files.
+
+// Pages showing a library are never cached, so links only reach people who can see the page.
+add_action('template_redirect', function() {
+    if (is_singular() && osm_find_collections_in_content(get_post_field('post_content', get_queried_object_id()))) {
+        nocache_headers();
+        if (!defined('DONOTCACHEPAGE')) define('DONOTCACHEPAGE', true);
+    }
+});
+
+// Attachment pages for protected files would reveal the file's address (and newer
+// WordPress redirects them straight to the file), so 404 them before that runs.
+add_action('template_redirect', function() {
+    if (is_attachment() && get_post_meta(get_queried_object_id(), '_osm_protected', true) && !current_user_can('upload_files')) {
+        global $wp_query;
+        $wp_query->set_404();
+        status_header(404);
+        nocache_headers();
+    }
+}, 1);
+
+// Hide protected files from the public media REST API.
+add_filter('rest_attachment_query', function($args) {
+    if (current_user_can('upload_files')) return $args;
+    $args['meta_query'] = isset($args['meta_query']) && is_array($args['meta_query']) ? $args['meta_query'] : [];
+    $args['meta_query'][] = ['key' => '_osm_protected', 'compare' => 'NOT EXISTS'];
+    return $args;
+});
+
+add_filter('rest_request_before_callbacks', function($response, $handler, $request) {
+    if (is_wp_error($response) || current_user_can('upload_files')) return $response;
+    if (preg_match('#^/wp/v2/media/(\d+)#', $request->get_route(), $m) && get_post_meta(intval($m[1]), '_osm_protected', true)) {
+        return new WP_Error('rest_post_invalid_id', 'Invalid post ID.', ['status' => 404]);
+    }
+    return $response;
+}, 10, 3);
+
+// Whether the private folder can be opened directly: 'blocked', 'open' or 'unknown'.
+function osm_check_direct_access($force = false) {
+    $cached = get_transient('osm_direct_access');
+    if ($cached && !$force) return $cached;
+
+    osm_ensure_private_dir();
+    $response = wp_remote_get(osm_private_dir()['url'] . '/osm-access-test.txt', [
+        'timeout'     => 10,
+        'redirection' => 0,
+        'sslverify'   => apply_filters('https_local_ssl_verify', false),
+    ]);
+
+    if (is_wp_error($response)) {
+        $status = 'unknown';
+    } elseif (wp_remote_retrieve_response_code($response) === 200 && trim(wp_remote_retrieve_body($response)) === 'osm-access-test') {
+        $status = 'open';
+    } else {
+        $status = 'blocked';
+    }
+
+    set_transient('osm_direct_access', $status, DAY_IN_SECONDS);
+    return $status;
+}
+
+// Admin screen: Sheet Music > File Protection.
+
+add_action('admin_menu', function() {
+    add_submenu_page(
+        'edit.php?post_type=sheet_music',
+        'File Protection',
+        'File Protection',
+        'edit_others_posts',
+        'osm-file-protection',
+        'osm_render_protection_page'
+    );
+});
+
+function osm_protection_counts() {
+    $ids = osm_all_sheet_music_attachment_ids();
+    $unprotected = array_values(array_filter($ids, function($id) {
+        $file = get_attached_file($id, true);
+        return $file && file_exists($file) && !osm_is_protected_file($file);
+    }));
+    return ['total' => count($ids), 'unprotected' => $unprotected];
+}
+
+add_action('admin_post_osm_protect_files', function() {
+    if (!current_user_can('edit_others_posts')) wp_die('Sorry, you are not allowed to do that.');
+    check_admin_referer('osm_protect_files');
+
+    $moved = 0;
+    $failed = 0;
+    $started = time();
+    foreach (osm_protection_counts()['unprotected'] as $attachment_id) {
+        if (time() - $started > 20) break; // stay well inside PHP time limits; run again for the rest
+        osm_protect_attachment($attachment_id) ? $moved++ : $failed++;
+    }
+    osm_check_direct_access(true);
+
+    wp_safe_redirect(add_query_arg([
+        'post_type' => 'sheet_music',
+        'page'      => 'osm-file-protection',
+        'moved'     => $moved,
+        'failed'    => $failed,
+    ], admin_url('edit.php')));
+    exit;
+});
+
+add_action('admin_post_osm_check_access', function() {
+    if (!current_user_can('edit_others_posts')) wp_die('Sorry, you are not allowed to do that.');
+    check_admin_referer('osm_check_access');
+    osm_check_direct_access(true);
+    wp_safe_redirect(admin_url('edit.php?post_type=sheet_music&page=osm-file-protection'));
+    exit;
+});
+
+function osm_render_protection_page() {
+    $counts = osm_protection_counts();
+    $remaining = count($counts['unprotected']);
+    $access = osm_check_direct_access();
+    $uploads_path = wp_parse_url(osm_private_dir()['url'], PHP_URL_PATH);
+    ?>
+    <style>
+        .osm-protection .osm-ok { color: #00a32a; }
+        .osm-protection .osm-warn { color: #dba617; }
+        .osm-protection .osm-code { background: #fff; border: 1px solid #ddd; padding: 10px 14px; max-width: 600px; }
+    </style>
+    <div class="wrap osm-protection">
+        <h1>File Protection</h1>
+
+        <?php // phpcs:disable WordPress.Security.NonceVerification.Recommended -- display-only result counts ?>
+        <?php if (isset($_GET['moved'])) : ?>
+            <div class="notice notice-success"><p>
+                Protected <?php echo intval($_GET['moved']); ?> file(s).
+                <?php if (!empty($_GET['failed'])) : ?>
+                    <?php echo intval($_GET['failed']); ?> could not be moved; check that the uploads folder is writable.
+                <?php endif; ?>
+            </p></div>
+        <?php endif; ?>
+        <?php // phpcs:enable WordPress.Security.NonceVerification.Recommended ?>
+
+        <p>Sheet music files are kept in a private folder and downloaded through links that only appear on your music library page and expire after a few weeks. Members using the page notice no difference; links copied elsewhere, or picked up by search engines, stop working.</p>
+
+        <h2>Files</h2>
+        <?php if ($remaining) : ?>
+            <p><strong><?php echo intval($remaining); ?> of <?php echo intval($counts['total']); ?></strong> sheet music files are still in the public uploads folder, where anyone with the address can open them.</p>
+            <p>Moving them changes their direct addresses, so any old direct links (including ones search engines have indexed) stop working. Links on your library page update automatically.</p>
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                <input type="hidden" name="action" value="osm_protect_files" />
+                <?php wp_nonce_field('osm_protect_files'); ?>
+                <?php submit_button('Protect ' . $remaining . ' file' . ($remaining === 1 ? '' : 's'), 'primary', 'submit', false); ?>
+            </form>
+        <?php else : ?>
+            <p><span class="dashicons dashicons-yes-alt osm-ok"></span> All <?php echo intval($counts['total']); ?> sheet music files are protected. New files are protected automatically when you save a piece.</p>
+        <?php endif; ?>
+
+        <h2>Direct access check</h2>
+        <?php if ($access === 'blocked') : ?>
+            <p><span class="dashicons dashicons-yes-alt osm-ok"></span> Your server blocks direct access to the private folder.</p>
+        <?php elseif ($access === 'open') : ?>
+            <p><span class="dashicons dashicons-warning osm-warn"></span> <strong>Your server allows direct access to the private folder.</strong> This is usual on Nginx servers, which ignore the folder's protection file. Files still have unguessable addresses and are hidden from search engines, but for full protection ask your host to add this rule to the site's Nginx configuration:</p>
+            <pre class="osm-code">location ^~ <?php echo esc_html(trailingslashit($uploads_path)); ?> {
+    deny all;
+}</pre>
+        <?php else : ?>
+            <p><span class="dashicons dashicons-info osm-warn"></span> The check couldn't reach your site from the server (some hosts block this). To test manually, open <a href="<?php echo esc_url(osm_private_dir()['url'] . '/osm-access-test.txt'); ?>" target="_blank" rel="noopener">this test file</a> in a private browser window: an error page means you're protected.</p>
+        <?php endif; ?>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+            <input type="hidden" name="action" value="osm_check_access" />
+            <?php wp_nonce_field('osm_check_access'); ?>
+            <?php submit_button('Check again', 'secondary', 'submit', false); ?>
+        </form>
+
+        <h2>Already in Google?</h2>
+        <p>Old addresses stop working once files are protected, and search engines drop them over the following weeks. To hide them sooner, use the Removals tool in <a href="https://search.google.com/search-console/removals" target="_blank" rel="noopener">Google Search Console</a>.</p>
+    </div>
+    <?php
+}
+
+// Nudge on the Sheet Music list screen when something needs attention.
+add_action('admin_notices', function() {
+    $screen = get_current_screen();
+    if (!$screen || $screen->id !== 'edit-sheet_music' || !current_user_can('edit_others_posts')) return;
+
+    $remaining = count(osm_protection_counts()['unprotected']);
+    $open = get_transient('osm_direct_access') === 'open';
+    if (!$remaining && !$open) return;
+
+    $url = admin_url('edit.php?post_type=sheet_music&page=osm-file-protection');
+    echo '<div class="notice notice-warning"><p>';
+    if ($remaining) {
+        echo esc_html($remaining . ' sheet music file' . ($remaining === 1 ? ' is' : 's are') . ' not protected yet.') . ' ';
+    } else {
+        echo 'Your server allows direct access to protected sheet music files. ';
+    }
+    echo '<a href="' . esc_url($url) . '">Review file protection</a></p></div>';
+});
 
 //////////////////////////////
 // BLOCKS

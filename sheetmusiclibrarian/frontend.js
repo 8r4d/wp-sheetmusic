@@ -210,8 +210,9 @@
 		return name.replace( /[\\/:*?"<>|]+/g, '-' ).replace( /\s+/g, ' ' ).trim();
 	}
 
-	function extensionOf( url ) {
-		var match = new URL( url, window.location.href ).pathname.match( /\.[A-Za-z0-9]{1,5}$/ );
+	function extensionOf( link ) {
+		if ( link.dataset.ext ) return link.dataset.ext;
+		var match = new URL( link.href, window.location.href ).pathname.match( /\.[A-Za-z0-9]{1,5}$/ );
 		return match ? match[ 0 ] : '';
 	}
 
@@ -231,9 +232,9 @@
 				if ( ! response.ok ) throw new Error( 'HTTP ' + response.status );
 
 				var base = safeName( parts[ i ].piece.querySelector( '.osm-piece-title' ).textContent + ' - ' + link.textContent );
-				var name = base + extensionOf( link.href );
+				var name = base + extensionOf( link );
 				for ( var n = 2; used[ name.toLowerCase() ]; n++ ) {
-					name = base + ' (' + n + ')' + extensionOf( link.href );
+					name = base + ' (' + n + ')' + extensionOf( link );
 				}
 				used[ name.toLowerCase() ] = true;
 
